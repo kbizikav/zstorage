@@ -1,11 +1,13 @@
 use std::cell::RefCell;
 
-use candid::{CandidType, Deserialize, Principal};
-use ic_cdk::api::{msg_caller, time};
+use candid::{CandidType, Deserialize};
+use ic_cdk::api::time;
 use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
 
 const MAX_PLAINTEXT_BYTES: usize = 16 * 1024;
 const MAX_METADATA_BYTES: usize = 4 * 1024;
+const DEFAULT_LIST_LIMIT: u32 = 50;
+const MAX_LIST_LIMIT: u32 = 200;
 
 #[derive(Clone, CandidType, Deserialize)]
 pub struct InitArgs {
@@ -15,7 +17,6 @@ pub struct InitArgs {
 
 #[derive(Clone, CandidType, Deserialize)]
 pub struct AnnouncementInput {
-    pub address: Vec<u8>,
     pub view_tag: u8,
     pub ephemeral_public_key: Vec<u8>,
     pub ciphertext: Vec<u8>,
@@ -29,14 +30,12 @@ pub struct AnnouncementInput {
 #[derive(Clone, CandidType, Deserialize)]
 pub struct Announcement {
     pub id: u64,
-    pub address: Vec<u8>,
     pub view_tag: u8,
     pub ephemeral_public_key: Vec<u8>,
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
     pub payload_type: Option<String>,
     pub metadata: Option<Vec<u8>>,
-    pub sender: Principal,
     pub created_at_ns: u64,
 }
 
@@ -92,14 +91,12 @@ fn submit_announcement(input: AnnouncementInput) -> Result<Announcement, String>
         let mut state = cell.borrow_mut();
         let announcement = Announcement {
             id: state.next_id,
-            address: input.address.clone(),
             view_tag: input.view_tag,
             ephemeral_public_key: input.ephemeral_public_key.clone(),
             ciphertext: input.ciphertext.clone(),
             nonce: input.nonce.clone(),
             payload_type: input.payload_type.clone(),
             metadata: input.metadata.clone(),
-            sender: msg_caller(),
             created_at_ns: time(),
         };
         state.announcements.push(announcement.clone());
@@ -110,13 +107,8 @@ fn submit_announcement(input: AnnouncementInput) -> Result<Announcement, String>
 }
 
 #[query]
-fn list_announcements(
-    start_after: Option<u64>,
-    limit: Option<u32>,
-    address_filter: Option<Vec<u8>>,
-    view_tag: Option<u8>,
-) -> AnnouncementPage {
-    let limit = limit.unwrap_or(50).min(200) as usize;
+fn list_announcements(start_after: Option<u64>, limit: Option<u32>) -> AnnouncementPage {
+    let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT).min(MAX_LIST_LIMIT) as usize;
     let (mut items, next_marker) = STATE.with(|cell| {
         let state = cell.borrow();
         let mut collected = Vec::with_capacity(limit);
@@ -124,16 +116,6 @@ fn list_announcements(
         for announcement in state.announcements.iter() {
             if let Some(start) = start_after {
                 if announcement.id <= start {
-                    continue;
-                }
-            }
-            if let Some(address) = &address_filter {
-                if &announcement.address != address {
-                    continue;
-                }
-            }
-            if let Some(tag) = view_tag {
-                if announcement.view_tag != tag {
                     continue;
                 }
             }
@@ -165,9 +147,6 @@ fn get_announcement(id: u64) -> Option<Announcement> {
 }
 
 fn validate_announcement(input: &AnnouncementInput) -> Result<(), String> {
-    if input.address.len() != 20 {
-        return Err("address must be 20 bytes".to_string());
-    }
     if input.ephemeral_public_key.len() != 96 {
         return Err("ephemeral_public_key must be 96 bytes (G2 compressed)".to_string());
     }
@@ -193,8 +172,7 @@ mod tests {
 
     #[test]
     fn validation_rejects_bad_key() {
-        let mut input = AnnouncementInput {
-            address: vec![0; 20],
+        let input = AnnouncementInput {
             view_tag: 0,
             ephemeral_public_key: vec![0; 96],
             ciphertext: vec![1; 16],
@@ -203,7 +181,5 @@ mod tests {
             metadata: None,
         };
         assert!(validate_announcement(&input).is_ok());
-        input.address = vec![];
-        assert!(validate_announcement(&input).is_err());
     }
 }

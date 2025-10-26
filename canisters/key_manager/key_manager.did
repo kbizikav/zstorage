@@ -1,27 +1,25 @@
-type ViewPublicKeyRequest = record { address : blob };
-type ViewPublicKeyResponse = record { public_key : blob };
-
-type EncryptedViewKeyRequest = record {
-  address : blob;
-  transport_public_key : blob;
-  expiry_ns : nat64;
-  nonce : nat64;
-  signature : blob;
-};
-
-type EncryptedViewKeyResponse = record {
-  encrypted_key : blob;
-  view_public_key : blob;
-};
+type Address = blob;
+type PublicKey = blob;
+type Signature = blob;
+type EncryptedKey = blob;
 
 type InitArgs = record {
-  master_public_key : blob;
-  key_id_name : opt text;
-  context : opt blob;
-  scheme_id : opt blob;
+  master_public_key : PublicKey;
+  key_id_name : text;
 };
 
+type EncryptedViewKeyRequest = record {
+  address : Address;
+  transport_public_key : PublicKey;
+  expiry_ns : nat64;
+  nonce : nat64;
+  signature : Signature;
+};
+
+type GetViewPublicKeyResult = variant { Ok : PublicKey; Err : text };
+type RequestEncryptedViewKeyResult = variant { Ok : EncryptedKey; Err : text };
+
 service : (InitArgs) -> {
-  get_view_public_key : (ViewPublicKeyRequest) -> (ViewPublicKeyResponse) query;
-  request_encrypted_view_key : (EncryptedViewKeyRequest) -> (EncryptedViewKeyResponse);
+  get_view_public_key : (Address) -> (GetViewPublicKeyResult) query;
+  request_encrypted_view_key : (EncryptedViewKeyRequest) -> (RequestEncryptedViewKeyResult);
 }

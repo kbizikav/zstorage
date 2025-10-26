@@ -31,7 +31,6 @@ pub mod types {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct AnnouncementInput {
-        pub address: Vec<u8>,
         pub view_tag: u8,
         pub ephemeral_public_key: Vec<u8>,
         pub ciphertext: Vec<u8>,
@@ -43,24 +42,20 @@ pub mod types {
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Announcement {
         pub id: u64,
-        pub address: Vec<u8>,
         pub view_tag: u8,
         pub ephemeral_public_key: Vec<u8>,
         pub ciphertext: Vec<u8>,
         pub nonce: Vec<u8>,
         pub payload_type: Option<String>,
         pub metadata: Option<Vec<u8>>,
-        pub sender: Principal,
         pub created_at_ns: u64,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct DecryptedAnnouncement {
         pub id: u64,
-        pub address: Vec<u8>,
         pub plaintext: Vec<u8>,
         pub metadata: Option<Vec<u8>>,
-        pub sender: Principal,
         pub created_at_ns: u64,
     }
 
@@ -122,7 +117,7 @@ pub fn generate_ephemeral_keypair<R: RngCore + CryptoRng>(rng: &mut R) -> Epheme
 
 pub fn encrypt_payload<R: RngCore + CryptoRng>(
     rng: &mut R,
-    address: [u8; 20],
+    _address: [u8; 20],
     view_public_key_bytes: &[u8],
     plaintext: &[u8],
     payload_type: Option<String>,
@@ -165,7 +160,6 @@ pub fn encrypt_payload<R: RngCore + CryptoRng>(
     };
 
     let announcement = types::AnnouncementInput {
-        address: address.to_vec(),
         view_tag: tag_key[0],
         ephemeral_public_key: Vec::from(ephemeral.public),
         ciphertext,
@@ -216,10 +210,8 @@ pub fn decrypt_announcement(
 
     Ok(Some(types::DecryptedAnnouncement {
         id: announcement.id,
-        address: announcement.address.clone(),
         plaintext,
         metadata: announcement.metadata.clone(),
-        sender: announcement.sender,
         created_at_ns: announcement.created_at_ns,
     }))
 }
