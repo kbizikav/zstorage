@@ -1,0 +1,36 @@
+type InitArgs = record { capacity_hint : opt nat64 };
+
+type AnnouncementInput = record {
+  address : blob;
+  view_tag : nat8;
+  ephemeral_public_key : blob;
+  ciphertext : blob;
+  nonce : blob;
+  payload_type : opt text;
+  metadata : opt blob;
+};
+
+type Announcement = record {
+  id : nat64;
+  address : blob;
+  view_tag : nat8;
+  ephemeral_public_key : blob;
+  ciphertext : blob;
+  nonce : blob;
+  payload_type : opt text;
+  metadata : opt blob;
+  sender : principal;
+  created_at_ns : nat64;
+};
+
+type AnnouncementPage = record {
+  announcements : vec Announcement;
+  next_id : opt nat64;
+};
+
+service : (opt InitArgs) -> {
+  submit_announcement : (AnnouncementInput) -> (Announcement);
+  list_announcements : (opt nat64, opt nat32, opt blob, opt nat8) -> (AnnouncementPage) query;
+  get_announcement : (nat64) -> (opt Announcement) query;
+}
+
