@@ -20,7 +20,6 @@ type Result<T> = std::result::Result<T, String>;
 
 #[derive(Clone, CandidType, Deserialize)]
 pub struct InitArgs {
-    pub master_public_key: Vec<u8>,
     pub key_id_name: String,
 }
 

@@ -4,7 +4,6 @@ type Signature = blob;
 type EncryptedKey = blob;
 
 type InitArgs = record {
-  master_public_key : PublicKey;
   key_id_name : text;
 };
 
