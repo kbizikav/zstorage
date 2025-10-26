@@ -1,0 +1,270 @@
+use candid::{CandidType, Encode};
+use ic_agent::{identity::AnonymousIdentity, Agent};
+use k256::ecdsa::SigningKey;
+use pocket_ic::PocketIc;
+use rand::{rngs::OsRng, RngCore};
+use serde::Serialize;
+use sha3::{Digest, Keccak256};
+use stealth_client::{
+    config, encrypt_payload, recipient, scan_announcements, sender, types, StealthCanisterClient,
+};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Once;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Clone, CandidType, Serialize)]
+struct KeyManagerInitArgs {
+    master_public_key: Vec<u8>,
+    key_id_name: String,
+}
+
+#[derive(Clone, CandidType, Serialize)]
+struct StorageInitArgs {
+    capacity_hint: Option<u64>,
+}
+
+#[test]
+fn pocket_ic_end_to_end_flow() {
+    if ensure_pocket_ic_server().is_none() {
+        eprintln!("Skipping PocketIC interaction test: pocket-ic binary not found.");
+        return;
+    }
+
+    let key_manager_wasm = load_canister_wasm("key_manager");
+    let storage_wasm = load_canister_wasm("storage");
+
+    let mut pic = PocketIc::new();
+
+    let key_manager_id = pic.create_canister();
+    pic.add_cycles(key_manager_id, 2_000_000_000_000);
+    let key_manager_init = Encode!(&KeyManagerInitArgs {
+        master_public_key: Vec::new(),
+        key_id_name: "test_key_1".to_string(),
+    })
+    .expect("failed to encode key manager init args");
+    pic.install_canister(
+        key_manager_id,
+        key_manager_wasm,
+        key_manager_init,
+        None,
+    );
+
+    let storage_id = pic.create_canister();
+    pic.add_cycles(storage_id, 2_000_000_000_000);
+    let storage_init =
+        Encode!(&Option::<StorageInitArgs>::None).expect("failed to encode storage init args");
+    pic.install_canister(storage_id, storage_wasm, storage_init, None);
+
+    let replica_url = pic.make_live(None);
+    let replica_url = replica_url.to_string();
+    let key_manager_principal = key_manager_id;
+    let storage_principal = storage_id;
+
+    let rt = tokio::runtime::Runtime::new().expect("failed to create Tokio runtime");
+    rt.block_on(async move {
+        let agent = Agent::builder()
+            .with_url(replica_url)
+            .with_identity(AnonymousIdentity)
+            .build()
+            .expect("failed to build agent");
+        agent.fetch_root_key().await.expect("failed to fetch root key");
+
+        let client = StealthCanisterClient::new(agent, storage_principal, key_manager_principal);
+
+        let mut rng = OsRng;
+        let signing_key = SigningKey::random(&mut rng);
+        let address = derive_address(&signing_key);
+
+        let view_public_key = client
+            .get_view_public_key(address)
+            .await
+            .expect("failed to query view public key");
+
+        let plaintext = b"hello from pocket-ic test";
+        let encryption = encrypt_payload(
+            &mut rng,
+            address,
+            &view_public_key,
+            plaintext,
+            Some("text/plain".into()),
+            None,
+            None,
+        )
+        .expect("encryption failed");
+
+        let announcement = client
+            .submit_announcement(&encryption.announcement)
+            .await
+            .expect("failed to submit announcement");
+
+        let transport = recipient::prepare_transport_key();
+        let expiry_ns = unix_time_ns().saturating_add(600 * 1_000_000_000);
+        let nonce = rng.next_u64();
+        let auth_message = sender::build_authorization_message(
+            key_manager_principal,
+            address,
+            &transport.public,
+            expiry_ns,
+            nonce,
+        );
+        let signature = sign_authorization(&auth_message, &signing_key);
+
+        let request = types::EncryptedViewKeyRequest {
+            address: address.to_vec(),
+            transport_public_key: transport.public.clone(),
+            expiry_ns,
+            nonce,
+            signature: signature.to_vec(),
+        };
+
+        let encrypted_key = client
+            .request_encrypted_view_key(&request)
+            .await
+            .expect("failed to request encrypted view key");
+
+        let view_secret = recipient::decrypt_vet_key(
+            address,
+            config::SCHEME_ID,
+            &encrypted_key,
+            &view_public_key,
+            &transport.secret,
+        )
+        .expect("failed to decrypt vet key");
+
+        let page = client
+            .list_announcements(None, Some(50))
+            .await
+            .expect("failed to list announcements");
+        let decrypted =
+            scan_announcements(&view_secret, &page.announcements).expect("scan announcements");
+        let recovered = decrypted
+            .iter()
+            .find(|entry| entry.id == announcement.id)
+            .expect("announcement not decrypted");
+        assert_eq!(recovered.plaintext, plaintext);
+    });
+
+    pic.stop_live();
+}
+
+fn ensure_pocket_ic_server() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("POCKET_IC_BIN") {
+        let path = PathBuf::from(path);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    if cfg!(windows) {
+        if let Ok(output) = Command::new("where").arg("pocket-ic.exe").output() {
+            if output.status.success() {
+                if let Ok(path) = String::from_utf8(output.stdout) {
+                    let trimmed = path.lines().next().map(str::trim).unwrap_or_default();
+                    if !trimmed.is_empty() {
+                        let path = PathBuf::from(trimmed);
+                        if path.exists() {
+                            std::env::set_var("POCKET_IC_BIN", &path);
+                            return Some(path);
+                        }
+                    }
+                }
+            }
+        }
+        return None;
+    }
+
+    if let Ok(output) = Command::new("which").arg("pocket-ic").output() {
+        if output.status.success() {
+            if let Ok(path) = String::from_utf8(output.stdout) {
+                let trimmed = path.trim();
+                if !trimmed.is_empty() {
+                    let path = PathBuf::from(trimmed);
+                    if path.exists() {
+                        std::env::set_var("POCKET_IC_BIN", &path);
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn load_canister_wasm(name: &str) -> Vec<u8> {
+    ensure_canisters_built();
+    let wasm_path = workspace_root()
+        .join("target")
+        .join("wasm32-unknown-unknown")
+        .join("release")
+        .join(format!("{name}.wasm"));
+    std::fs::read(&wasm_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read wasm for {name} at {}: {err}",
+            wasm_path.display()
+        )
+    })
+}
+
+fn ensure_canisters_built() {
+    static BUILD_ONCE: Once = Once::new();
+    BUILD_ONCE.call_once(|| {
+        let status = Command::new("cargo")
+            .args([
+                "build",
+                "--target",
+                "wasm32-unknown-unknown",
+                "--release",
+                "-p",
+                "key_manager",
+                "-p",
+                "storage",
+            ])
+            .current_dir(workspace_root())
+            .status()
+            .expect("failed to invoke cargo build for canisters");
+        assert!(
+            status.success(),
+            "cargo build for canisters did not succeed"
+        );
+    });
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crate dir has parent")
+        .parent()
+        .expect("workspace root exists")
+        .to_path_buf()
+}
+
+fn derive_address(signing_key: &SigningKey) -> [u8; 20] {
+    let verifying_key = signing_key.verifying_key();
+    let encoded = verifying_key.to_encoded_point(false);
+    let public_key = encoded.as_bytes();
+    let digest = Keccak256::digest(&public_key[1..]);
+    let mut address = [0u8; 20];
+    address.copy_from_slice(&digest[12..]);
+    address
+}
+
+fn sign_authorization(message: &[u8], signing_key: &SigningKey) -> [u8; 65] {
+    let digest: [u8; 32] = Keccak256::digest(message).into();
+    let (signature, recovery_id) = signing_key
+        .sign_prehash_recoverable(&digest)
+        .expect("failed to sign authorization message");
+    let mut bytes = [0u8; 65];
+    bytes[..64].copy_from_slice(&signature.to_bytes());
+    bytes[64] = recovery_id.to_byte().saturating_add(27);
+    bytes
+}
+
+fn unix_time_ns() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time before unix epoch");
+    now.as_secs()
+        .saturating_mul(1_000_000_000)
+        .saturating_add(now.subsec_nanos() as u64)
+}

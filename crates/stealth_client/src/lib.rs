@@ -2,10 +2,11 @@
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
+use alloy_primitives::{Signature as AlloySignature, B256};
 use bls12_381::{G2Affine, G2Projective, Scalar};
-use candid::Principal;
+use candid::{Decode, Encode, Principal};
 use hkdf::Hkdf;
-use alloy_primitives::{B256, Signature as AlloySignature};
+use ic_agent::{Agent, AgentError};
 use rand::rngs::OsRng;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -28,8 +29,9 @@ pub mod config {
 
 pub mod types {
     use super::*;
+    use candid::CandidType;
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
     pub struct AnnouncementInput {
         pub view_tag: u8,
         pub ephemeral_public_key: Vec<u8>,
@@ -39,7 +41,7 @@ pub mod types {
         pub metadata: Option<Vec<u8>>,
     }
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
     pub struct Announcement {
         pub id: u64,
         pub view_tag: u8,
@@ -51,7 +53,13 @@ pub mod types {
         pub created_at_ns: u64,
     }
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
+    pub struct AnnouncementPage {
+        pub announcements: Vec<Announcement>,
+        pub next_id: Option<u64>,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
     pub struct DecryptedAnnouncement {
         pub id: u64,
         pub plaintext: Vec<u8>,
@@ -59,7 +67,16 @@ pub mod types {
         pub created_at_ns: u64,
     }
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
+    pub struct EncryptedViewKeyRequest {
+        pub address: Vec<u8>,
+        pub transport_public_key: Vec<u8>,
+        pub expiry_ns: u64,
+        pub nonce: u64,
+        pub signature: Vec<u8>,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
     pub struct EncryptedViewKeyResponse {
         pub encrypted_key: Vec<u8>,
         pub view_public_key: Vec<u8>,
@@ -85,6 +102,120 @@ pub enum StealthError {
 }
 
 pub type Result<T> = std::result::Result<T, StealthError>;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ClientError {
+    #[error("agent error: {0}")]
+    Agent(#[from] AgentError),
+    #[error("candid error: {0}")]
+    Candid(#[from] candid::Error),
+    #[error("canister error: {0}")]
+    Canister(String),
+}
+
+pub type ClientResult<T> = std::result::Result<T, ClientError>;
+
+pub struct StealthCanisterClient {
+    agent: Agent,
+    storage_canister_id: Principal,
+    key_manager_canister_id: Principal,
+}
+
+impl StealthCanisterClient {
+    pub fn new(
+        agent: Agent,
+        storage_canister_id: Principal,
+        key_manager_canister_id: Principal,
+    ) -> Self {
+        Self {
+            agent,
+            storage_canister_id,
+            key_manager_canister_id,
+        }
+    }
+
+    pub fn agent(&self) -> &Agent {
+        &self.agent
+    }
+
+    pub fn storage_canister_id(&self) -> Principal {
+        self.storage_canister_id
+    }
+
+    pub fn key_manager_canister_id(&self) -> Principal {
+        self.key_manager_canister_id
+    }
+
+    pub async fn get_view_public_key(&self, address: [u8; 20]) -> ClientResult<Vec<u8>> {
+        let arg = candid::Encode!(&address.to_vec())?;
+        let response = self
+            .agent
+            .query(&self.key_manager_canister_id, "get_view_public_key")
+            .with_arg(arg)
+            .call()
+            .await?;
+        let (result,) = candid::Decode!(&response, (std::result::Result<Vec<u8>, String>,))?;
+        result.map_err(ClientError::Canister)
+    }
+
+    pub async fn request_encrypted_view_key(
+        &self,
+        request: &types::EncryptedViewKeyRequest,
+    ) -> ClientResult<Vec<u8>> {
+        let arg = candid::Encode!(request)?;
+        let response = self
+            .agent
+            .update(&self.key_manager_canister_id, "request_encrypted_view_key")
+            .with_arg(arg)
+            .call_and_wait()
+            .await?;
+        let (result,) = candid::Decode!(&response, (std::result::Result<Vec<u8>, String>,))?;
+        result.map_err(ClientError::Canister)
+    }
+
+    pub async fn submit_announcement(
+        &self,
+        input: &types::AnnouncementInput,
+    ) -> ClientResult<types::Announcement> {
+        let arg = candid::Encode!(input)?;
+        let response = self
+            .agent
+            .update(&self.storage_canister_id, "submit_announcement")
+            .with_arg(arg)
+            .call_and_wait()
+            .await?;
+        let (announcement,) = candid::Decode!(&response, (types::Announcement,))?;
+        Ok(announcement)
+    }
+
+    pub async fn list_announcements(
+        &self,
+        start_after: Option<u64>,
+        limit: Option<u32>,
+    ) -> ClientResult<types::AnnouncementPage> {
+        let arg = candid::Encode!(&start_after, &limit)?;
+        let response = self
+            .agent
+            .query(&self.storage_canister_id, "list_announcements")
+            .with_arg(arg)
+            .call()
+            .await?;
+        let (page,) = candid::Decode!(&response, (types::AnnouncementPage,))?;
+        Ok(page)
+    }
+
+    pub async fn get_announcement(&self, id: u64) -> ClientResult<Option<types::Announcement>> {
+        let arg = candid::Encode!(&id)?;
+        let response = self
+            .agent
+            .query(&self.storage_canister_id, "get_announcement")
+            .with_arg(arg)
+            .call()
+            .await?;
+        let (announcement,) = candid::Decode!(&response, (Option<types::Announcement>,))?;
+        Ok(announcement)
+    }
+}
 
 pub struct EphemeralKeyPair {
     pub secret: [u8; 32],
@@ -303,8 +434,8 @@ pub mod sender {
         if signature.len() != 65 {
             return Err(StealthError::Transport("signature length".into()));
         }
-        let signature =
-            AlloySignature::from_raw(signature).map_err(|_| StealthError::Transport("invalid signature".into()))?;
+        let signature = AlloySignature::from_raw(signature)
+            .map_err(|_| StealthError::Transport("invalid signature".into()))?;
         let digest = Keccak256::digest(message);
         let mut hash_bytes = [0u8; 32];
         hash_bytes.copy_from_slice(&digest);
