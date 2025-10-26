@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
+use alloy_primitives::{Signature as AlloySignature, B256};
 use candid::Principal;
 use candid::{CandidType, Deserialize};
 use ic_cdk::api::{canister_self, time};
@@ -10,7 +11,6 @@ use ic_cdk::management_canister::{
     VetKDPublicKeyArgs,
 };
 use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
-use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use sha3::{Digest, Keccak256};
 
 const CONTEXT_BASE: &[u8] = b"icp-stealth-announcement-v1";
@@ -27,7 +27,6 @@ pub struct InitArgs {
 #[derive(Clone, CandidType, Deserialize)]
 struct Config {
     key_id_name: String,
-    master_public_key: Vec<u8>,
 }
 
 #[derive(Clone, CandidType, Deserialize)]
@@ -52,10 +51,7 @@ pub struct EncryptedViewKeyRequest {
 #[init]
 fn init(args: InitArgs) {
     let key_id_name = args.key_id_name;
-    let config = Config {
-        key_id_name,
-        master_public_key: args.master_public_key,
-    };
+    let config = Config { key_id_name };
 
     STATE.with(|state| {
         *state.borrow_mut() = Some(State {
@@ -143,11 +139,11 @@ async fn request_encrypted_view_key(request: EncryptedViewKeyRequest) -> Result<
         transport_public_key: request.transport_public_key.clone(),
     };
 
-    let result = vetkd_derive_key(&args)
+    let reply = vetkd_derive_key(&args)
         .await
         .map_err(|err| err.to_string())?;
 
-    Ok(result.encrypted_key)
+    Ok(reply.encrypted_key)
 }
 
 fn with_state<F, R>(f: F) -> Result<R>
@@ -194,23 +190,16 @@ fn recover_address(message: &[u8], signature: &[u8]) -> Result<Address> {
     if signature.len() != 65 {
         return Err("signature must be 65 bytes (r||s||v)".to_string());
     }
-    let (&v_raw, rs) = signature
-        .split_last()
-        .ok_or_else(|| "signature must be 65 bytes (r||s||v)".to_string())?;
-    let signature = Signature::try_from(rs).map_err(|_| "invalid signature".to_string())?;
-    let v = match v_raw {
-        27 | 28 => v_raw - 27,
-        other => other,
-    };
-    let recovery_id = RecoveryId::from_byte(v).ok_or_else(|| "invalid recovery id".to_string())?;
-    let digest = Keccak256::new_with_prefix(message);
-    let verify_key = VerifyingKey::recover_from_digest(digest, &signature, recovery_id)
+    let signature =
+        AlloySignature::from_raw(signature).map_err(|_| "invalid signature".to_string())?;
+    let digest = Keccak256::digest(message);
+    let mut hash_bytes = [0u8; 32];
+    hash_bytes.copy_from_slice(&digest);
+    let hash = B256::from(hash_bytes);
+    let address = signature
+        .recover_address_from_prehash(&hash)
         .map_err(|_| "failed to recover signer".to_string())?;
-    let encoded = verify_key.to_encoded_point(false);
-    let hash = Keccak256::digest(&encoded.as_bytes()[1..]);
-    hash[12..]
-        .try_into()
-        .map_err(|_| "unexpected public key length".to_string())
+    Ok(address.into_array())
 }
 
 ic_cdk::export_candid!();

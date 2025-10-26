@@ -19,7 +19,7 @@ ic-cdk-macros = "0.18.7"
 ic-ledger-types = "0.15"
 ic-stable-structures = "0.7.2"
 ic-vetkeys = "0.5"
-k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+alloy-primitives = { version = "1.4.1", default-features = false, features = ["k256"] }
 rand = { version = "0.8", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"

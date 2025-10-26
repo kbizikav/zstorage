@@ -5,7 +5,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use bls12_381::{G2Affine, G2Projective, Scalar};
 use candid::Principal;
 use hkdf::Hkdf;
-use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
+use alloy_primitives::{B256, Signature as AlloySignature};
 use rand::rngs::OsRng;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -311,25 +311,16 @@ pub mod sender {
         if signature.len() != 65 {
             return Err(StealthError::Transport("signature length".into()));
         }
-        let mut sig_bytes = [0u8; 65];
-        sig_bytes.copy_from_slice(signature);
-        let signature = Signature::try_from(&sig_bytes[..64])
-            .map_err(|_| StealthError::Transport("invalid signature".into()))?;
-        let v = match sig_bytes[64] {
-            27 | 28 => sig_bytes[64] - 27,
-            other => other,
-        };
-        let recovery_id = RecoveryId::from_byte(v)
-            .ok_or_else(|| StealthError::Transport("invalid recovery id".into()))?;
-        let digest = Keccak256::new_with_prefix(message);
-        let verify_key = VerifyingKey::recover_from_digest(digest, &signature, recovery_id)
+        let signature =
+            AlloySignature::from_raw(signature).map_err(|_| StealthError::Transport("invalid signature".into()))?;
+        let digest = Keccak256::digest(message);
+        let mut hash_bytes = [0u8; 32];
+        hash_bytes.copy_from_slice(&digest);
+        let hash = B256::from(hash_bytes);
+        let address = signature
+            .recover_address_from_prehash(&hash)
             .map_err(|_| StealthError::Transport("recovery failed".into()))?;
-        let encoded = verify_key.to_encoded_point(false);
-        let pub_bytes = encoded.as_bytes();
-        let hash = Keccak256::digest(&pub_bytes[1..]);
-        let mut address = [0u8; 20];
-        address.copy_from_slice(&hash[12..]);
-        Ok(address)
+        Ok(address.into_array())
     }
 }
 
@@ -355,4 +346,3 @@ mod tests {
         assert_eq!(pair.public.len(), 96);
     }
 }
-use std::convert::TryFrom;
