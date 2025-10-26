@@ -80,7 +80,7 @@ async fn hello_world() -> String {
     "Hello, World!".to_string()
 }
 
-#[query(composite = true)]
+#[update]
 async fn get_dummy_vkey() -> Result<Vec<u8>> {
     let address = [0; 20];
     let config = with_state(|state| state.config.clone())?;
@@ -99,7 +99,7 @@ async fn get_dummy_vkey() -> Result<Vec<u8>> {
     Ok(reply.public_key)
 }
 
-#[query(composite = true)]
+#[update]
 async fn get_view_public_key(address: Vec<u8>) -> Result<Vec<u8>> {
     let address = to_address(&address)?;
     let config = with_state(|state| state.config.clone())?;

@@ -1,10 +1,7 @@
 use candid::{CandidType, Encode};
 use ic_agent::{identity::AnonymousIdentity, Agent};
 use k256::ecdsa::SigningKey;
-use pocket_ic::{
-    common::rest::{IcpFeatures, IcpFeaturesConfig},
-    PocketIcBuilder, PocketIcState,
-};
+use pocket_ic::{PocketIcBuilder, PocketIcState};
 use rand::{rngs::OsRng, RngCore};
 use serde::Serialize;
 use sha3::{Digest, Keccak256};
@@ -84,6 +81,8 @@ fn pocket_ic_end_to_end_flow() {
             .get_view_public_key(address)
             .await
             .expect("failed to query view public key");
+
+        println!("got view public key: {:x?}", view_public_key);
 
         let plaintext = b"hello from pocket-ic test";
         let encryption = encrypt_payload(

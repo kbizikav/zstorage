@@ -150,11 +150,12 @@ impl StealthCanisterClient {
         let arg = candid::Encode!(&address.to_vec())?;
         let response = self
             .agent
-            .query(&self.key_manager_canister_id, "get_view_public_key")
+            .update(&self.key_manager_canister_id, "get_view_public_key")
             .with_arg(arg)
-            .call()
+            .call_and_wait()
             .await?;
-        let (result,) = candid::Decode!(&response, (std::result::Result<Vec<u8>, String>,))?;
+        let result: std::result::Result<Vec<u8>, String> =
+            candid::Decode!(&response, std::result::Result<Vec<u8>, String>)?;
         result.map_err(ClientError::Canister)
     }
 
@@ -169,7 +170,8 @@ impl StealthCanisterClient {
             .with_arg(arg)
             .call_and_wait()
             .await?;
-        let (result,) = candid::Decode!(&response, (std::result::Result<Vec<u8>, String>,))?;
+        let result: std::result::Result<Vec<u8>, String> =
+            candid::Decode!(&response, std::result::Result<Vec<u8>, String>)?;
         result.map_err(ClientError::Canister)
     }
 
