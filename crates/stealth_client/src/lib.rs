@@ -186,8 +186,9 @@ impl StealthCanisterClient {
             .with_arg(arg)
             .call_and_wait()
             .await?;
-        let (announcement,) = candid::Decode!(&response, (types::Announcement,))?;
-        Ok(announcement)
+        let result: std::result::Result<types::Announcement, String> =
+            candid::Decode!(&response, std::result::Result<types::Announcement, String>)?;
+        result.map_err(ClientError::Canister)
     }
 
     pub async fn list_announcements(

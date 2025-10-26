@@ -82,7 +82,7 @@ fn pocket_ic_end_to_end_flow() {
             .await
             .expect("failed to query view public key");
 
-        println!("got view public key: {:x?}", view_public_key);
+        println!("got view public key: {}", hex::encode(&view_public_key));
 
         let plaintext = b"hello from pocket-ic test";
         let encryption = encrypt_payload(
