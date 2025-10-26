@@ -150,9 +150,10 @@ async fn run_demo_flow(cli: &Cli, client: &StealthCanisterClient) -> Result<()> 
         .context("failed to request encrypted view key")?;
     println!("Encrypted vet key: 0x{}", hex::encode(&encrypted_key));
 
+    let view_key = recipient::decrypt_vet_key(&encrypted_key, &view_public_key, &transport.secret)
+        .context("failed to decrypt vet key response")?;
     let view_secret =
-        recipient::decrypt_vet_key(&encrypted_key, &view_public_key, &transport.secret)
-            .context("failed to decrypt vet key response")?;
+        recipient::derive_view_secret(&view_key).context("failed to derive view secret scalar")?;
     println!(
         "Recovered view secret scalar: 0x{}",
         hex::encode(view_secret)

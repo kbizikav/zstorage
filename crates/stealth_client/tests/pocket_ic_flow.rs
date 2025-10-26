@@ -126,9 +126,11 @@ fn pocket_ic_end_to_end_flow() {
             .await
             .expect("failed to request encrypted view key");
 
-        let view_secret =
+        let view_key =
             recipient::decrypt_vet_key(&encrypted_key, &view_public_key, &transport.secret)
                 .expect("failed to decrypt vet key");
+        let view_secret =
+            recipient::derive_view_secret(&view_key).expect("failed to derive view secret");
 
         let page = client
             .list_announcements(None, Some(50))

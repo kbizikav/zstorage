@@ -203,7 +203,7 @@ impl StealthCanisterClient {
             .with_arg(arg)
             .call()
             .await?;
-        let (page,) = candid::Decode!(&response, (types::AnnouncementPage,))?;
+        let page = candid::Decode!(&response, types::AnnouncementPage)?;
         Ok(page)
     }
 
@@ -395,6 +395,14 @@ pub mod recipient {
             .decrypt_and_verify(transport_secret, &derived, &[])
             .map_err(|e| StealthError::Transport(e))?;
         Ok(vet_key)
+    }
+
+    /// Derive the 32-byte viewing secret scalar from a VetKey.
+    pub fn derive_view_secret(vet_key: &VetKey) -> Result<[u8; 32]> {
+        let derived = vet_key.derive_symmetric_key(config::VIEW_KEY_DOMAIN, 32);
+        derived
+            .try_into()
+            .map_err(|_| StealthError::Transport("invalid view secret length".into()))
     }
 }
 
