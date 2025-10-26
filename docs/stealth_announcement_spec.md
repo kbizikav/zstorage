@@ -43,7 +43,7 @@
   - `k_tag = HKDF(shared_bytes, salt="icp-stealth", info="view-tag")`.
 - Produce `view_tag = first_byte(k_tag)` (EIP‑5564 compliant).citeturn0search2
 - Encrypt the payload using AES‑GCM‑256 (nonce derived from HKDF or random 96-bit nonce).
-- Submit the announcement to storage with `(address, e_pk_compressed, view_tag, ciphertext, nonce, payload_type_metadata)`, where `e_pk_compressed` is a 96-byte G2 encoding.
+- Submit the announcement to storage with `(e_pk_compressed, view_tag, ciphertext, nonce, payload_type_metadata)`, where `e_pk_compressed` is a 96-byte G2 encoding.
 
 ### 3.4 Recipient decryption workflow
 
