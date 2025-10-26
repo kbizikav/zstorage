@@ -10,7 +10,7 @@ use std::process::Command;
 use std::sync::Once;
 use std::time::{SystemTime, UNIX_EPOCH};
 use stealth_client::{
-    config, encrypt_payload, recipient, scan_announcements, sender, types, StealthCanisterClient,
+    encrypt_payload, recipient, scan_announcements, sender, types, StealthCanisterClient,
 };
 
 #[derive(Clone, CandidType, Serialize)]
@@ -126,14 +126,9 @@ fn pocket_ic_end_to_end_flow() {
             .await
             .expect("failed to request encrypted view key");
 
-        let view_secret = recipient::decrypt_vet_key(
-            address,
-            config::SCHEME_ID,
-            &encrypted_key,
-            &view_public_key,
-            &transport.secret,
-        )
-        .expect("failed to decrypt vet key");
+        let view_secret =
+            recipient::decrypt_vet_key(&encrypted_key, &view_public_key, &transport.secret)
+                .expect("failed to decrypt vet key");
 
         let page = client
             .list_announcements(None, Some(50))

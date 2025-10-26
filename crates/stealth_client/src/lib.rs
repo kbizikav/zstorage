@@ -365,7 +365,7 @@ pub fn scan_announcements(
 
 pub mod recipient {
     use super::*;
-    use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, TransportSecretKey};
+    use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, TransportSecretKey, VetKey};
 
     pub struct TransportKeyPair {
         pub secret: TransportSecretKey,
@@ -383,33 +383,18 @@ pub mod recipient {
     }
 
     pub fn decrypt_vet_key(
-        address: [u8; 20],
-        scheme_id: &[u8],
         encrypted_key: &[u8],
         derived_public_key: &[u8],
         transport_secret: &TransportSecretKey,
-    ) -> Result<[u8; 32]> {
+    ) -> Result<VetKey> {
         let encrypted =
             EncryptedVetKey::deserialize(encrypted_key).map_err(|e| StealthError::Transport(e))?;
         let derived = DerivedPublicKey::deserialize(derived_public_key)
             .map_err(|_| StealthError::Transport("invalid derived public key".into()))?;
-        let mut input = Vec::with_capacity(address.len() + scheme_id.len());
-        input.extend_from_slice(&address);
-        input.extend_from_slice(scheme_id);
         let vet_key = encrypted
-            .decrypt_and_verify(transport_secret, &derived, &input)
+            .decrypt_and_verify(transport_secret, &derived, &[])
             .map_err(|e| StealthError::Transport(e))?;
-        let material = vet_key.derive_symmetric_key(config::VIEW_KEY_DOMAIN, 32);
-        let mut scalar_bytes = [0u8; 32];
-        scalar_bytes.copy_from_slice(&material);
-        let scalar = Scalar::from_bytes(&scalar_bytes)
-            .into_option()
-            .ok_or(StealthError::InvalidScalar)?;
-        let expected = G2Affine::from(G2Projective::generator() * scalar).to_compressed();
-        if expected.as_ref() != derived_public_key {
-            return Err(StealthError::Transport("mismatched viewing key".into()));
-        }
-        Ok(scalar.to_bytes())
+        Ok(vet_key)
     }
 }
 

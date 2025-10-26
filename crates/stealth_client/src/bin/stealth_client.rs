@@ -7,7 +7,7 @@ use rand::{rngs::OsRng, RngCore};
 use sha3::{Digest, Keccak256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use stealth_client::{
-    config, encrypt_payload, recipient, scan_announcements, sender, types, StealthCanisterClient,
+    encrypt_payload, recipient, scan_announcements, sender, types, StealthCanisterClient,
 };
 
 #[derive(Parser)]
@@ -150,14 +150,9 @@ async fn run_demo_flow(cli: &Cli, client: &StealthCanisterClient) -> Result<()> 
         .context("failed to request encrypted view key")?;
     println!("Encrypted vet key: 0x{}", hex::encode(&encrypted_key));
 
-    let view_secret = recipient::decrypt_vet_key(
-        address,
-        config::SCHEME_ID,
-        &encrypted_key,
-        &view_public_key,
-        &transport.secret,
-    )
-    .context("failed to decrypt vet key response")?;
+    let view_secret =
+        recipient::decrypt_vet_key(&encrypted_key, &view_public_key, &transport.secret)
+            .context("failed to decrypt vet key response")?;
     println!(
         "Recovered view secret scalar: 0x{}",
         hex::encode(view_secret)
