@@ -251,7 +251,6 @@ pub fn generate_ephemeral_keypair<R: RngCore + CryptoRng>(rng: &mut R) -> Epheme
 
 pub fn encrypt_payload<R: RngCore + CryptoRng>(
     rng: &mut R,
-    _address: [u8; 20],
     view_public_key_bytes: &[u8],
     plaintext: &[u8],
     payload_type: Option<String>,

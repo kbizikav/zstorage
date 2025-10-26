@@ -10,7 +10,7 @@ use ic_cdk::management_canister::{
     vetkd_derive_key, vetkd_public_key, VetKDCurve, VetKDDeriveKeyArgs, VetKDKeyId,
     VetKDPublicKeyArgs,
 };
-use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
+use ic_cdk_macros::{init, post_upgrade, pre_upgrade, update};
 use sha3::{Digest, Keccak256};
 
 const CONTEXT_BASE: &[u8] = b"icp-stealth-announcement-v1";
@@ -73,30 +73,6 @@ fn post_upgrade() {
     STATE.with(|state| {
         *state.borrow_mut() = maybe_state;
     });
-}
-
-#[query(composite = true)]
-async fn hello_world() -> String {
-    "Hello, World!".to_string()
-}
-
-#[update]
-async fn get_dummy_vkey() -> Result<Vec<u8>> {
-    let address = [0; 20];
-    let config = with_state(|state| state.config.clone())?;
-    let args = VetKDPublicKeyArgs {
-        canister_id: None,
-        context: context_for_address(&address),
-        key_id: VetKDKeyId {
-            curve: VetKDCurve::Bls12_381_G2,
-            name: config.key_id_name.clone(),
-        },
-    };
-
-    let reply = vetkd_public_key(&args)
-        .await
-        .map_err(|err| err.to_string())?;
-    Ok(reply.public_key)
 }
 
 #[update]

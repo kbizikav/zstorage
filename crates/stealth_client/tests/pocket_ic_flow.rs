@@ -87,7 +87,6 @@ fn pocket_ic_end_to_end_flow() {
         let plaintext = b"hello from pocket-ic test";
         let encryption = encrypt_payload(
             &mut rng,
-            address,
             &view_public_key,
             plaintext,
             Some("text/plain".into()),

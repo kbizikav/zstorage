@@ -101,7 +101,6 @@ async fn run_demo_flow(cli: &Cli, client: &StealthCanisterClient) -> Result<()> 
     let plaintext = cli.message.as_bytes();
     let encryption = encrypt_payload(
         &mut rng,
-        address,
         &view_public_key,
         plaintext,
         cli.payload_type.clone(),

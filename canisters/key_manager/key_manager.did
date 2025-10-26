@@ -19,8 +19,6 @@ type GetViewPublicKeyResult = variant { Ok : PublicKey; Err : text };
 type RequestEncryptedViewKeyResult = variant { Ok : EncryptedKey; Err : text };
 
 service : (InitArgs) -> {
-  hello_world: () -> (text) query;
-  get_dummy_vkey : () -> (GetViewPublicKeyResult);
   get_view_public_key : (Address) -> (GetViewPublicKeyResult);
   request_encrypted_view_key : (EncryptedViewKeyRequest) -> (RequestEncryptedViewKeyResult);
 }
