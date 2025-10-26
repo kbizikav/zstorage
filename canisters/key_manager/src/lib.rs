@@ -76,6 +76,30 @@ fn post_upgrade() {
 }
 
 #[query(composite = true)]
+async fn hello_world() -> String {
+    "Hello, World!".to_string()
+}
+
+#[query(composite = true)]
+async fn get_dummy_vkey() -> Result<Vec<u8>> {
+    let address = [0; 20];
+    let config = with_state(|state| state.config.clone())?;
+    let args = VetKDPublicKeyArgs {
+        canister_id: None,
+        context: context_for_address(&address),
+        key_id: VetKDKeyId {
+            curve: VetKDCurve::Bls12_381_G2,
+            name: config.key_id_name.clone(),
+        },
+    };
+
+    let reply = vetkd_public_key(&args)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(reply.public_key)
+}
+
+#[query(composite = true)]
 async fn get_view_public_key(address: Vec<u8>) -> Result<Vec<u8>> {
     let address = to_address(&address)?;
     let config = with_state(|state| state.config.clone())?;

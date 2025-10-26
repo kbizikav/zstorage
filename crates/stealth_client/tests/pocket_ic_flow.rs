@@ -1,7 +1,10 @@
 use candid::{CandidType, Encode};
 use ic_agent::{identity::AnonymousIdentity, Agent};
 use k256::ecdsa::SigningKey;
-use pocket_ic::PocketIc;
+use pocket_ic::{
+    common::rest::{IcpFeatures, IcpFeaturesConfig},
+    PocketIcBuilder, PocketIcState,
+};
 use rand::{rngs::OsRng, RngCore};
 use serde::Serialize;
 use sha3::{Digest, Keccak256};
@@ -34,7 +37,15 @@ fn pocket_ic_end_to_end_flow() {
     let key_manager_wasm = load_canister_wasm("key_manager");
     let storage_wasm = load_canister_wasm("storage");
 
-    let mut pic = PocketIc::new();
+    // Use an isolated temporary state directory to avoid reusing stale checkpoints
+    let mut icp_features = IcpFeatures::default();
+    icp_features.registry = Some(IcpFeaturesConfig::DefaultConfig);
+    // Enable the registry feature so VetKD keys are provisioned for the key manager
+    let mut pic = PocketIcBuilder::new()
+        .with_application_subnet()
+        .with_icp_features(icp_features)
+        .with_state(PocketIcState::new())
+        .build();
 
     let key_manager_id = pic.create_canister();
     pic.add_cycles(key_manager_id, 2_000_000_000_000);
