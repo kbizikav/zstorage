@@ -11,6 +11,7 @@ use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use sha3::{Digest, Keccak256};
+use std::convert::TryInto;
 
 pub mod config {
     /// Default HKDF salt for deriving symmetric keys.
@@ -144,7 +145,7 @@ pub fn encrypt_payload<R: RngCore + CryptoRng>(
     hk.expand(config::HKDF_INFO_TAG, &mut tag_key)
         .map_err(|_| StealthError::Hkdf)?;
 
-    let nonce = match nonce_override {
+    let nonce_bytes = match nonce_override {
         Some(nonce) => nonce,
         None => {
             let mut nonce = [0u8; 12];
@@ -154,17 +155,21 @@ pub fn encrypt_payload<R: RngCore + CryptoRng>(
     };
 
     let cipher = Aes256Gcm::new_from_slice(&aes_key).map_err(|_| StealthError::EncryptionFailed)?;
-    let nonce_ga = Nonce::clone_from_slice(&nonce);
+    let nonce_ga = Nonce::from(nonce_bytes);
     let ciphertext = cipher
         .encrypt(&nonce_ga, plaintext)
         .map_err(|_| StealthError::EncryptionFailed)?;
+    let nonce_vec = {
+        let array: [u8; 12] = nonce_ga.into();
+        array.to_vec()
+    };
 
     let announcement = types::AnnouncementInput {
         address: address.to_vec(),
         view_tag: tag_key[0],
         ephemeral_public_key: Vec::from(ephemeral.public),
         ciphertext,
-        nonce: nonce.to_vec(),
+        nonce: nonce_vec,
         payload_type,
         metadata,
     };
@@ -199,7 +204,12 @@ pub fn decrypt_announcement(
     hk.expand(config::HKDF_INFO_ENC, &mut aes_key)
         .map_err(|_| StealthError::Hkdf)?;
     let cipher = Aes256Gcm::new_from_slice(&aes_key).map_err(|_| StealthError::DecryptionFailed)?;
-    let nonce_ga = Nonce::clone_from_slice(&announcement.nonce);
+    let nonce_arr: [u8; 12] = announcement
+        .nonce
+        .as_slice()
+        .try_into()
+        .map_err(|_| StealthError::DecryptionFailed)?;
+    let nonce_ga = Nonce::from(nonce_arr);
     let plaintext = cipher
         .decrypt(&nonce_ga, announcement.ciphertext.as_ref())
         .map_err(|_| StealthError::DecryptionFailed)?;

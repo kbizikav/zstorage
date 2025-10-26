@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use candid::{CandidType, Deserialize, Principal};
-use ic_cdk::api::time;
+use ic_cdk::api::{msg_caller, time};
 use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
 
 const MAX_PLAINTEXT_BYTES: usize = 16 * 1024;
@@ -99,7 +99,7 @@ fn submit_announcement(input: AnnouncementInput) -> Result<Announcement, String>
             nonce: input.nonce.clone(),
             payload_type: input.payload_type.clone(),
             metadata: input.metadata.clone(),
-            sender: ic_cdk::caller(),
+            sender: msg_caller(),
             created_at_ns: time(),
         };
         state.announcements.push(announcement.clone());

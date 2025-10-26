@@ -6,8 +6,8 @@ use bls12_381::{G2Affine, G2Projective, Scalar};
 use candid::Principal;
 use candid::{CandidType, Deserialize};
 use hkdf::Hkdf;
-use ic_cdk::api::time;
-use ic_cdk::{caller, id};
+use ic_cdk::api::{canister_self, msg_caller, time};
+use ic_cdk::call::Call;
 use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use sha2::Sha256;
@@ -181,7 +181,7 @@ async fn request_encrypted_view_key(
     input.extend_from_slice(&config.scheme_id);
 
     let args = VetKDDeriveKeyArgs {
-        context: derive_context(&config.context, caller()),
+        context: derive_context(&config.context, msg_caller()),
         input,
         key_id: VetKDKeyId {
             curve: VetKDCurve::Bls12_381G2,
@@ -190,13 +190,13 @@ async fn request_encrypted_view_key(
         transport_public_key: request.transport_public_key.clone(),
     };
 
-    let (encrypted,): (VetKDEncryptedKey,) = ic_cdk::call(
-        Principal::management_canister(),
-        "vetkd_derive_key",
-        (args,),
-    )
-    .await
-    .map_err(|(_, msg)| msg)?;
+    let response = Call::unbounded_wait(Principal::management_canister(), "vetkd_derive_key")
+        .with_arg((args,))
+        .await
+        .map_err(|err| err.to_string())?;
+    let (encrypted,): (VetKDEncryptedKey,) = response
+        .candid_tuple()
+        .map_err(|err| err.to_string())?;
 
     Ok(EncryptedViewKeyResponse {
         encrypted_key: encrypted.encrypted_key,
@@ -237,7 +237,7 @@ fn derive_view_public_key(config: &Config, address: Address) -> Result<Vec<u8>, 
 fn derive_scalar(config: &Config, address: Address) -> Result<Scalar, String> {
     let mut hkdf_input = Vec::new();
     hkdf_input.extend_from_slice(&config.context);
-    hkdf_input.extend_from_slice(id().as_slice());
+    hkdf_input.extend_from_slice(canister_self().as_slice());
     hkdf_input.extend_from_slice(&address);
     hkdf_input.extend_from_slice(&config.scheme_id);
     hkdf_input.extend_from_slice(&config.master_public_key);
@@ -262,7 +262,13 @@ fn authorization_message(
     expiry_ns: u64,
     nonce: u64,
 ) -> Vec<u8> {
-    authorization_message_with_canister(id(), address, transport_public_key, expiry_ns, nonce)
+    authorization_message_with_canister(
+        canister_self(),
+        address,
+        transport_public_key,
+        expiry_ns,
+        nonce,
+    )
 }
 
 fn authorization_message_with_canister(
