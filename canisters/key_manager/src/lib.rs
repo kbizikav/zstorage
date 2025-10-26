@@ -13,8 +13,7 @@ use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use sha3::{Digest, Keccak256};
 
-const CONTEXT_DEFAULT: &[u8] = b"icp-stealth-announcement-v1";
-const SCHEME_ID_DEFAULT: &[u8] = b"icp-stealth-bls-g2-v1";
+const CONTEXT_BASE: &[u8] = b"icp-stealth-announcement-v1";
 
 type Address = [u8; 20];
 type Result<T> = std::result::Result<T, String>;
@@ -22,18 +21,11 @@ type Result<T> = std::result::Result<T, String>;
 #[derive(Clone, CandidType, Deserialize)]
 pub struct InitArgs {
     pub master_public_key: Vec<u8>,
-    #[serde(default)]
-    pub key_id_name: Option<String>,
-    #[serde(default)]
-    pub context: Option<Vec<u8>>,
-    #[serde(default)]
-    pub scheme_id: Option<Vec<u8>>,
+    pub key_id_name: String,
 }
 
 #[derive(Clone, CandidType, Deserialize)]
 struct Config {
-    context: Vec<u8>,
-    scheme_id: Vec<u8>,
     key_id_name: String,
     master_public_key: Vec<u8>,
 }
@@ -59,10 +51,8 @@ pub struct EncryptedViewKeyRequest {
 
 #[init]
 fn init(args: InitArgs) {
-    let key_id_name = args.key_id_name.unwrap_or_else(|| "test_key_1".to_string());
+    let key_id_name = args.key_id_name;
     let config = Config {
-        context: args.context.unwrap_or_else(|| CONTEXT_DEFAULT.to_vec()),
-        scheme_id: args.scheme_id.unwrap_or_else(|| SCHEME_ID_DEFAULT.to_vec()),
         key_id_name,
         master_public_key: args.master_public_key,
     };
@@ -96,7 +86,7 @@ async fn get_view_public_key(address: Vec<u8>) -> Result<Vec<u8>> {
     let config = with_state(|state| state.config.clone())?;
     let args = VetKDPublicKeyArgs {
         canister_id: None,
-        context: context_for_address(&config.context, &address),
+        context: context_for_address(&address),
         key_id: VetKDKeyId {
             curve: VetKDCurve::Bls12_381_G2,
             name: config.key_id_name.clone(),
@@ -144,7 +134,7 @@ async fn request_encrypted_view_key(request: EncryptedViewKeyRequest) -> Result<
     }
 
     let args = VetKDDeriveKeyArgs {
-        context: context_for_address(&config.context, &address),
+        context: context_for_address(&address),
         input: Vec::new(),
         key_id: VetKDKeyId {
             curve: VetKDCurve::Bls12_381_G2,
@@ -177,8 +167,8 @@ fn to_address(bytes: &[u8]) -> Result<Address> {
     <[u8; 20]>::try_from(bytes).map_err(|_| "address must be 20 bytes".to_string())
 }
 
-fn context_for_address(base: &[u8], address: &Address) -> Vec<u8> {
-    let mut context = base.to_vec();
+fn context_for_address(address: &Address) -> Vec<u8> {
+    let mut context = CONTEXT_BASE.to_vec();
     context.extend_from_slice(address);
     context
 }
