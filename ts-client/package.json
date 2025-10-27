@@ -1,0 +1,45 @@
+{
+  "name": "@zstorage/stealth-client",
+  "version": "0.1.0",
+  "description": "TypeScript helpers for the ICP stealth announcement protocol",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "lint": "eslint 'src/**/*.{ts,tsx}'",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "icp",
+    "stealth",
+    "vetkd",
+    "dfinity"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@dfinity/agent": "3.4.1",
+    "@dfinity/candid": "3.4.1",
+    "@dfinity/principal": "3.4.1",
+    "@dfinity/vetkeys": "0.4.0",
+    "@noble/hashes": "^1.4.0",
+    "@noble/secp256k1": "^2.1.0",
+    "base64-arraybuffer": "^1.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "@typescript-eslint/eslint-plugin": "^8.46.2",
+    "@typescript-eslint/parser": "^8.46.2",
+    "eslint": "^9.38.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import": "^2.32.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.3"
+  }
+}
