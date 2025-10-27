@@ -168,7 +168,7 @@ fn to_address(bytes: &[u8]) -> Result<Address> {
     <[u8; 20]>::try_from(bytes).map_err(|_| "address must be 20 bytes".to_string())
 }
 
-fn context_for_address(address: &Address) -> Vec<u8> {
+pub fn context_for_address(address: &Address) -> Vec<u8> {
     let mut context = CONTEXT_BASE.to_vec();
     context.extend_from_slice(address);
     context

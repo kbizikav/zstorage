@@ -22,6 +22,8 @@ pub enum StealthError {
     AnnouncementIgnored(&'static str),
     #[error("transport key error: {0}")]
     Transport(String),
+    #[error("vetkd derivation failed: {0}")]
+    VetKdDerivation(String),
 }
 
 pub type Result<T> = std::result::Result<T, StealthError>;

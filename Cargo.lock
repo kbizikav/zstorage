@@ -2953,6 +2953,7 @@ dependencies = [
  "criterion",
  "hex",
  "ic-agent",
+ "ic-cdk",
  "ic-vetkeys",
  "ic_bls12_381",
  "k256",
