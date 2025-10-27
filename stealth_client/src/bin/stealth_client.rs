@@ -30,11 +30,6 @@ struct Cli {
     storage: String,
     #[arg(
         long,
-        help = "Fetch the replica root key; required for local development replicas"
-    )]
-    fetch_root_key: bool,
-    #[arg(
-        long,
         default_value = "Hello from the Rust stealth client!",
         help = "Plaintext message to encrypt and announce"
     )]
@@ -69,7 +64,7 @@ async fn build_agent(cli: &Cli) -> Result<Agent> {
         .build()
         .context("failed to build agent")?;
 
-    if cli.fetch_root_key || is_local_replica(&cli.replica_url) {
+    if is_local_replica(&cli.replica_url) {
         agent
             .fetch_root_key()
             .await
