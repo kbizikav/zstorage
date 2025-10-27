@@ -97,8 +97,8 @@ async fn run_demo_flow(cli: &Cli, client: &StealthCanisterClient) -> Result<()> 
     println!("View public key: 0x{}", hex::encode(&view_public_key));
 
     let plaintext = cli.message.as_bytes();
-    let encryption = encrypt_payload(&mut rng, &view_public_key, address, plaintext, None)
-        .context("encryption failed")?;
+    let encryption =
+        encrypt_payload(&mut rng, &view_public_key, plaintext).context("encryption failed")?;
 
     let announcement = client
         .submit_announcement(&encryption.announcement)

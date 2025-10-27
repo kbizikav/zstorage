@@ -82,11 +82,9 @@ fn pocket_ic_end_to_end_flow() {
             .await
             .expect("failed to query view public key");
 
-        println!("got view public key: {}", hex::encode(&view_public_key));
-
         let plaintext = b"hello from pocket-ic test";
-        let encryption = encrypt_payload(&mut rng, &view_public_key, address, plaintext, None)
-            .expect("encryption failed");
+        let encryption =
+            encrypt_payload(&mut rng, &view_public_key, plaintext).expect("encryption failed");
 
         let announcement = client
             .submit_announcement(&encryption.announcement)

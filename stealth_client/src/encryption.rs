@@ -14,26 +14,18 @@ pub struct EncryptionResult {
 pub fn encrypt_payload<R: RngCore + CryptoRng>(
     rng: &mut R,
     view_public_key_bytes: &[u8],
-    address: [u8; 20],
     plaintext: &[u8],
-    nonce_override: Option<[u8; 12]>,
 ) -> Result<EncryptionResult> {
     let derived_public_key = DerivedPublicKey::deserialize(view_public_key_bytes)
         .map_err(|_| StealthError::InvalidDerivedPublicKey)?;
-    let identity = IbeIdentity::from_bytes(&address);
+    let identity = IbeIdentity::from_bytes(&[]);
     let seed = IbeSeed::random(rng);
 
     let mut aes_key = [0u8; 32];
     rng.fill_bytes(&mut aes_key);
 
-    let nonce_bytes = match nonce_override {
-        Some(nonce) => nonce,
-        None => {
-            let mut nonce = [0u8; 12];
-            rng.fill_bytes(&mut nonce);
-            nonce
-        }
-    };
+    let mut nonce_bytes = [0u8; 12];
+    rng.fill_bytes(&mut nonce_bytes);
 
     let cipher = Aes256Gcm::new_from_slice(&aes_key).map_err(|_| StealthError::EncryptionFailed)?;
     let nonce_ga = Nonce::from(nonce_bytes);
@@ -123,7 +115,7 @@ mod tests {
     fn encrypt_rejects_invalid_public_key() {
         let mut rng = OsRng;
         let view_public_key = vec![0u8; 95];
-        let result = encrypt_payload(&mut rng, &view_public_key, [0u8; 20], b"hello", None);
+        let result = encrypt_payload(&mut rng, &view_public_key, b"hello");
         assert!(matches!(result, Err(StealthError::InvalidDerivedPublicKey)));
     }
 }
