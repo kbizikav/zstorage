@@ -2963,6 +2963,7 @@ dependencies = [
  "serde",
  "sha2 0.10.9",
  "sha3",
+ "storage",
  "thiserror 2.0.17",
  "tokio",
 ]
@@ -2971,6 +2972,7 @@ dependencies = [
 name = "storage"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "anyhow",
  "base64 0.22.1",
  "candid",
@@ -2980,6 +2982,7 @@ dependencies = [
  "ic-stable-structures",
  "serde",
  "serde_bytes",
+ "sha3",
 ]
 
 [[package]]

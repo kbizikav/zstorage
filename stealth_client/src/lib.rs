@@ -6,5 +6,6 @@ pub mod authorization;
 pub mod client;
 pub mod encryption;
 pub mod error;
+pub mod invoice;
 pub mod recipient;
 pub mod view_key;

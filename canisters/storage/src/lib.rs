@@ -1,8 +1,11 @@
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 
+use alloy_primitives::{utils::eip191_message, Signature, B256};
 use candid::{CandidType, Deserialize};
 use ic_cdk::api::time;
 use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
+use sha3::{Digest, Keccak256};
 
 const MAX_CIPHERTEXT_BYTES: usize = 16 * 1024;
 const MAX_IBE_CIPHERTEXT_BYTES: usize = 512;
@@ -37,10 +40,17 @@ pub struct AnnouncementPage {
     pub next_id: Option<u64>,
 }
 
+#[derive(Clone, CandidType, Deserialize)]
+pub struct InvoiceSubmission {
+    pub invoice_id: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
 #[derive(Clone, CandidType, Deserialize, Default)]
 struct State {
     announcements: Vec<Announcement>,
     next_id: u64,
+    invoices: BTreeMap<[u8; 20], Vec<[u8; 32]>>,
 }
 
 thread_local! {
@@ -55,6 +65,7 @@ fn init(args: Option<InitArgs>) {
         *state = State {
             announcements: Vec::new(),
             next_id: 0,
+            invoices: BTreeMap::new(),
         }
     });
 }
@@ -135,6 +146,38 @@ fn get_announcement(id: u64) -> Option<Announcement> {
     })
 }
 
+#[update]
+fn submit_invoice(input: InvoiceSubmission) -> Result<(), String> {
+    let invoice_id = normalize_invoice_id(&input.invoice_id)?;
+    let signature = parse_signature(&input.signature)?;
+    let message = invoice_signature_message(&invoice_id);
+    let signer_bytes = recover_address_from_signature(&signature, &message)?;
+
+    STATE.with(|cell| {
+        let mut state = cell.borrow_mut();
+        let invoices = state.invoices.entry(signer_bytes).or_default();
+        if !invoices.contains(&invoice_id) {
+            invoices.push(invoice_id);
+        }
+    });
+
+    Ok(())
+}
+
+#[query]
+fn list_invoices(address: Vec<u8>) -> Result<Vec<Vec<u8>>, String> {
+    let address_bytes: [u8; 20] = normalize_address(&address)?;
+    let invoices = STATE.with(|cell| {
+        let state = cell.borrow();
+        state
+            .invoices
+            .get(&address_bytes)
+            .map(|items| items.iter().map(|id| id.to_vec()).collect())
+            .unwrap_or_default()
+    });
+    Ok(invoices)
+}
+
 fn validate_announcement(input: &AnnouncementInput) -> Result<(), String> {
     if input.ibe_ciphertext.is_empty() || input.ibe_ciphertext.len() > MAX_IBE_CIPHERTEXT_BYTES {
         return Err("ibe_ciphertext size is invalid".to_string());
@@ -146,6 +189,54 @@ fn validate_announcement(input: &AnnouncementInput) -> Result<(), String> {
         return Err("nonce must be 12 bytes (AES-GCM)".to_string());
     }
     Ok(())
+}
+
+fn normalize_invoice_id(invoice_id: &[u8]) -> Result<[u8; 32], String> {
+    if invoice_id.len() != 32 {
+        return Err("invoice_id must be exactly 32 bytes".to_string());
+    }
+    let mut normalized = [0u8; 32];
+    normalized.copy_from_slice(invoice_id);
+    Ok(normalized)
+}
+
+fn parse_signature(bytes: &[u8]) -> Result<Signature, String> {
+    match bytes.len() {
+        65 => Signature::from_raw(bytes).map_err(|err| format!("invalid signature: {err}")),
+        64 => Ok(Signature::from_erc2098(bytes)),
+        _ => Err("signature must be 64 or 65 bytes".to_string()),
+    }
+}
+
+fn normalize_address(address: &[u8]) -> Result<[u8; 20], String> {
+    if address.len() != 20 {
+        return Err("address must be exactly 20 bytes".to_string());
+    }
+    let mut normalized = [0u8; 20];
+    normalized.copy_from_slice(address);
+    Ok(normalized)
+}
+
+fn invoice_signature_message(invoice_id: &[u8; 32]) -> Vec<u8> {
+    let message = format!(
+        "ICP Stealth Invoice Submission:\ninvoice_id: 0x{}",
+        hex::encode(invoice_id)
+    );
+    eip191_message(message.as_bytes())
+}
+
+fn recover_address_from_signature(
+    signature: &Signature,
+    message: &[u8],
+) -> Result<[u8; 20], String> {
+    let digest = Keccak256::digest(message);
+    let mut hash_bytes = [0u8; 32];
+    hash_bytes.copy_from_slice(&digest);
+    let hash = B256::from(hash_bytes);
+    signature
+        .recover_address_from_prehash(&hash)
+        .map(|address| address.into_array())
+        .map_err(|err| format!("failed to recover address: {err}"))
 }
 
 ic_cdk::export_candid!();

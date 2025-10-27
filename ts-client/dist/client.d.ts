@@ -1,6 +1,6 @@
 import { ActorMethod, Agent } from '@dfinity/agent';
 import { Principal } from '@dfinity/principal';
-import { Announcement, AnnouncementInput, AnnouncementPage, CanisterResult, EncryptedViewKeyRequest } from './types';
+import { Announcement, AnnouncementInput, AnnouncementPage, CanisterResult, EncryptedViewKeyRequest, InvoiceSubmission } from './types';
 export type KeyManagerActor = {
     get_view_public_key: ActorMethod<[Uint8Array], CanisterResult<Uint8Array>>;
     request_encrypted_view_key: ActorMethod<[EncryptedViewKeyRequestCandid], CanisterResult<Uint8Array>>;
@@ -18,8 +18,14 @@ export interface EncryptedViewKeyRequestCandid {
     nonce: bigint;
     signature: Uint8Array;
 }
+export interface InvoiceSubmissionCandid {
+    invoice_id: Uint8Array;
+    signature: Uint8Array;
+}
 export type StorageActor = {
-    submit_announcement: ActorMethod<[AnnouncementInputCandid], AnnouncementCandid>;
+    submit_announcement: ActorMethod<[AnnouncementInputCandid], CanisterResult<AnnouncementCandid>>;
+    submit_invoice: ActorMethod<[InvoiceSubmissionCandid], CanisterResult<null>>;
+    list_invoices: ActorMethod<[Uint8Array], CanisterResult<Uint8Array[]>>;
     list_announcements: ActorMethod<[[] | [bigint], [] | [number]], AnnouncementPageCandid>;
     get_announcement: ActorMethod<[bigint], [] | [AnnouncementCandid]>;
 };
@@ -48,6 +54,8 @@ export declare class StealthCanisterClient {
     requestEncryptedViewKey(request: EncryptedViewKeyRequest): Promise<Uint8Array>;
     getMaxNonce(address: Uint8Array): Promise<bigint>;
     submitAnnouncement(input: AnnouncementInput): Promise<Announcement>;
+    submitInvoice(submission: InvoiceSubmission): Promise<void>;
+    listInvoices(address: Uint8Array): Promise<Uint8Array[]>;
     listAnnouncements(startAfter?: bigint, limit?: number): Promise<AnnouncementPage>;
     getAnnouncement(id: bigint): Promise<Announcement | null>;
     private getKeyManagerActor;

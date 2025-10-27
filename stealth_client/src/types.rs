@@ -24,6 +24,12 @@ pub struct AnnouncementPage {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
+pub struct InvoiceSubmission {
+    pub invoice_id: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
 pub struct DecryptedAnnouncement {
     pub id: u64,
     pub plaintext: Vec<u8>,

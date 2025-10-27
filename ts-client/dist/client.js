@@ -34,8 +34,19 @@ export class StealthCanisterClient {
     }
     async submitAnnouncement(input) {
         const actor = await this.getStorageActor();
-        const candidAnnouncement = await actor.submit_announcement(toCandidAnnouncementInput(input));
-        return mapAnnouncement(candidAnnouncement);
+        const result = await actor.submit_announcement(toCandidAnnouncementInput(input));
+        const announcement = unwrapResult(result, 'submit_announcement');
+        return mapAnnouncement(announcement);
+    }
+    async submitInvoice(submission) {
+        const actor = await this.getStorageActor();
+        const result = await actor.submit_invoice(toCandidInvoiceSubmission(submission));
+        unwrapResult(result, 'submit_invoice');
+    }
+    async listInvoices(address) {
+        const actor = await this.getStorageActor();
+        const result = await actor.list_invoices(address);
+        return unwrapResult(result, 'list_invoices');
     }
     async listAnnouncements(startAfter, limit) {
         const actor = await this.getStorageActor();
@@ -80,7 +91,16 @@ function unwrapResult(result, method) {
     if ('Ok' in result) {
         return result.Ok;
     }
-    throw new StealthError(`${method} failed: ${result.Err}`);
+    if ('ok' in result) {
+        return result.ok;
+    }
+    if ('Err' in result) {
+        throw new StealthError(`${method} failed: ${result.Err}`);
+    }
+    if ('err' in result) {
+        throw new StealthError(`${method} failed: ${result.err}`);
+    }
+    throw new StealthError(`${method} failed: unknown canister result variant`);
 }
 function mapAnnouncement(announcement) {
     return {
@@ -105,6 +125,12 @@ function toCandidEncryptedViewKeyRequest(request) {
         expiry_ns: request.expiryNs,
         nonce: request.nonce,
         signature: request.signature,
+    };
+}
+function toCandidInvoiceSubmission(submission) {
+    return {
+        invoice_id: submission.invoiceId,
+        signature: submission.signature,
     };
 }
 const keyManagerIdlFactory = ({ IDL: idl }) => {
@@ -145,8 +171,17 @@ const storageIdlFactory = ({ IDL: idl }) => {
         announcements: idl.Vec(Announcement),
         next_id: idl.Opt(idl.Nat64),
     });
+    const InvoiceSubmission = idl.Record({
+        invoice_id: idl.Vec(idl.Nat8),
+        signature: idl.Vec(idl.Nat8),
+    });
+    const SubmitAnnouncementResult = idl.Variant({ ok: Announcement, err: idl.Text });
+    const SubmitInvoiceResult = idl.Variant({ ok: idl.Null, err: idl.Text });
+    const ListInvoicesResult = idl.Variant({ ok: idl.Vec(idl.Vec(idl.Nat8)), err: idl.Text });
     return idl.Service({
-        submit_announcement: idl.Func([AnnouncementInput], [Announcement], []),
+        submit_announcement: idl.Func([AnnouncementInput], [SubmitAnnouncementResult], []),
+        submit_invoice: idl.Func([InvoiceSubmission], [SubmitInvoiceResult], []),
+        list_invoices: idl.Func([idl.Vec(idl.Nat8)], [ListInvoicesResult], ['query']),
         list_announcements: idl.Func([idl.Opt(idl.Nat64), idl.Opt(idl.Nat32)], [AnnouncementPage], ['query']),
         get_announcement: idl.Func([idl.Nat64], [idl.Opt(Announcement)], ['query']),
     });

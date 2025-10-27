@@ -14,6 +14,10 @@ export interface AnnouncementPage {
     announcements: Announcement[];
     nextId: bigint | null;
 }
+export interface InvoiceSubmission {
+    invoiceId: Uint8Array;
+    signature: Uint8Array;
+}
 export interface DecryptedAnnouncement {
     id: bigint;
     plaintext: Uint8Array;
@@ -34,6 +38,10 @@ export type CanisterResult<T> = {
     Ok: T;
 } | {
     Err: string;
+} | {
+    ok: T;
+} | {
+    err: string;
 };
 export interface VetKdConfig {
     /** Domain separator passed to the key manager when deriving keys */

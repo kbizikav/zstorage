@@ -91,6 +91,32 @@ impl StealthCanisterClient {
         result.map_err(ClientError::Canister)
     }
 
+    pub async fn submit_invoice(&self, input: &types::InvoiceSubmission) -> ClientResult<()> {
+        let arg = candid::Encode!(input)?;
+        let response = self
+            .agent
+            .update(&self.storage_canister_id, "submit_invoice")
+            .with_arg(arg)
+            .call_and_wait()
+            .await?;
+        let result: std::result::Result<(), String> =
+            candid::Decode!(&response, std::result::Result<(), String>)?;
+        result.map_err(ClientError::Canister)
+    }
+
+    pub async fn list_invoices(&self, address: [u8; 20]) -> ClientResult<Vec<Vec<u8>>> {
+        let arg = candid::Encode!(&address.to_vec())?;
+        let response = self
+            .agent
+            .query(&self.storage_canister_id, "list_invoices")
+            .with_arg(arg)
+            .call()
+            .await?;
+        let result: std::result::Result<Vec<Vec<u8>>, String> =
+            candid::Decode!(&response, std::result::Result<Vec<Vec<u8>>, String>)?;
+        result.map_err(ClientError::Canister)
+    }
+
     pub async fn list_announcements(
         &self,
         start_after: Option<u64>,

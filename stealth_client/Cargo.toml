@@ -8,6 +8,7 @@ crate-type = ["lib"]
 
 [dependencies]
 key_manager = { path = "../canisters/key_manager" }
+storage = { path = "../canisters/storage" }
 anyhow.workspace = true
 aes-gcm.workspace = true
 candid.workspace = true
