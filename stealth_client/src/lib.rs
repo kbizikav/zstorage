@@ -6,7 +6,6 @@ mod client;
 mod encryption;
 mod error;
 pub mod recipient;
-pub mod sender;
 
 pub use client::StealthCanisterClient;
 pub use encryption::{decrypt_announcement, encrypt_payload, scan_announcements, EncryptionResult};

@@ -3,11 +3,12 @@ use candid::Principal;
 use clap::Parser;
 use ic_agent::{identity::AnonymousIdentity, Agent};
 use k256::ecdsa::SigningKey;
+use key_manager::authorization::authorization_message;
 use rand::{rngs::OsRng, RngCore};
 use sha3::{Digest, Keccak256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use stealth_client::{
-    encrypt_payload, recipient, scan_announcements, sender, types, StealthCanisterClient,
+    encrypt_payload, recipient, scan_announcements, types, StealthCanisterClient,
 };
 
 #[derive(Parser)]
@@ -116,14 +117,13 @@ async fn run_demo_flow(cli: &Cli, client: &StealthCanisterClient) -> Result<()> 
         now_ns.saturating_add(cli.authorization_ttl_seconds.saturating_mul(1_000_000_000));
     let nonce = rng.next_u64();
 
-    let auth_message = sender::build_authorization_message(
+    let auth_message = authorization_message(
         client.key_manager_canister_id(),
-        address,
+        &address,
         &transport.public,
         expiry_ns,
         nonce,
     );
-
     let signature = sign_authorization(&auth_message, &signing_key)?;
     println!("Authorization signature: 0x{}", hex::encode(signature));
 

@@ -1,6 +1,7 @@
 use candid::{CandidType, Encode};
 use ic_agent::{identity::AnonymousIdentity, Agent};
 use k256::ecdsa::SigningKey;
+use key_manager::authorization::authorization_message;
 use pocket_ic::{PocketIcBuilder, PocketIcState};
 use rand::{rngs::OsRng, RngCore};
 use serde::Serialize;
@@ -10,7 +11,7 @@ use std::process::Command;
 use std::sync::Once;
 use std::time::{SystemTime, UNIX_EPOCH};
 use stealth_client::{
-    encrypt_payload, recipient, scan_announcements, sender, types, StealthCanisterClient,
+    encrypt_payload, recipient, scan_announcements, types, StealthCanisterClient,
 };
 
 #[derive(Clone, CandidType, Serialize)]
@@ -99,9 +100,9 @@ fn pocket_ic_end_to_end_flow() {
         // expiry in 10 minutes
         let expiry_ns = unix_time_ns().saturating_add(600 * 1_000_000_000);
         let nonce = rng.next_u64();
-        let auth_message = sender::build_authorization_message(
+        let auth_message = authorization_message(
             key_manager_principal,
-            address,
+            &address,
             &transport.public,
             expiry_ns,
             nonce,

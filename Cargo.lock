@@ -1625,6 +1625,7 @@ dependencies = [
  "sha2 0.10.9",
  "sha3",
  "subtle",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -2722,6 +2723,7 @@ dependencies = [
  "ic-agent",
  "ic-vetkeys",
  "k256",
+ "key_manager",
  "pocket-ic",
  "rand 0.8.5",
  "serde",
