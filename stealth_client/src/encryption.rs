@@ -4,18 +4,16 @@ use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use rand::{CryptoRng, RngCore};
 
-use crate::{types, Result, StealthError};
+use crate::error::{Result, StealthError};
+use crate::types;
+use crate::types::AnnouncementInput;
 use ic_vetkeys::{DerivedPublicKey, IbeCiphertext, IbeIdentity, IbeSeed, VetKey};
-
-pub struct EncryptionResult {
-    pub announcement: types::AnnouncementInput,
-}
 
 pub fn encrypt_payload<R: RngCore + CryptoRng>(
     rng: &mut R,
     view_public_key_bytes: &[u8],
     plaintext: &[u8],
-) -> Result<EncryptionResult> {
+) -> Result<AnnouncementInput> {
     let derived_public_key = DerivedPublicKey::deserialize(view_public_key_bytes)
         .map_err(|_| StealthError::InvalidDerivedPublicKey)?;
     let identity = IbeIdentity::from_bytes(&[]);
@@ -48,7 +46,7 @@ pub fn encrypt_payload<R: RngCore + CryptoRng>(
         nonce: nonce_vec,
     };
 
-    Ok(EncryptionResult { announcement })
+    Ok(announcement)
 }
 
 pub fn decrypt_announcement(

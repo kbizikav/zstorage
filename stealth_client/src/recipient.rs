@@ -1,7 +1,7 @@
 use rand::rngs::OsRng;
 use rand::RngCore;
 
-use crate::{Result, StealthError};
+use crate::error::{Result, StealthError};
 use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, TransportSecretKey, VetKey};
 
 pub struct TransportKeyPair {

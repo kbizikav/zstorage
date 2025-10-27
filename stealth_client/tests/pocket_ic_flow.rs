@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
 use std::time::{SystemTime, UNIX_EPOCH};
-use stealth_client::{
-    encrypt_payload, recipient, scan_announcements, types, StealthCanisterClient,
-};
+use stealth_client::client::StealthCanisterClient;
+use stealth_client::encryption::{encrypt_payload, scan_announcements};
+use stealth_client::{recipient, types};
 
 #[derive(Clone, CandidType, Serialize)]
 struct KeyManagerInitArgs {
@@ -91,7 +91,7 @@ fn pocket_ic_end_to_end_flow() {
             encrypt_payload(&mut rng, &view_public_key, plaintext).expect("encryption failed");
 
         let announcement = client
-            .submit_announcement(&encryption.announcement)
+            .submit_announcement(&encryption)
             .await
             .expect("failed to submit announcement");
 

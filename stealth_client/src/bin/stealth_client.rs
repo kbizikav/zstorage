@@ -8,7 +8,9 @@ use rand::{rngs::OsRng, RngCore};
 use sha3::{Digest, Keccak256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use stealth_client::{
-    encrypt_payload, recipient, scan_announcements, types, StealthCanisterClient,
+    client::StealthCanisterClient,
+    encryption::{encrypt_payload, scan_announcements},
+    recipient, types,
 };
 
 #[derive(Parser)]
@@ -102,7 +104,7 @@ async fn run_demo_flow(cli: &Cli, client: &StealthCanisterClient) -> Result<()> 
         encrypt_payload(&mut rng, &view_public_key, plaintext).context("encryption failed")?;
 
     let announcement = client
-        .submit_announcement(&encryption.announcement)
+        .submit_announcement(&encryption)
         .await
         .context("failed to submit announcement")?;
     println!(

@@ -1,7 +1,6 @@
+use crate::{error::ClientError, error::ClientResult, types};
 use candid::{Decode, Encode, Principal};
 use ic_agent::Agent;
-
-use crate::{types, ClientError, ClientResult};
 
 pub struct StealthCanisterClient {
     agent: Agent,
