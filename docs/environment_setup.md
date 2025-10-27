@@ -34,54 +34,14 @@ Use this guide to prepare a local development workstation for contributing to th
 
 ## 5. PocketIC for Local Testing
 
-- Add the `pocket-ic` binary for deterministic in-process replica testing:
-  - Install the crate: `cargo install pocket-ic`.
-  - Export the binary path in your shell (`export POCKET_IC_BIN="$(which pocket-ic)"`).
-- CI environments should cache the binary and set `POCKET_IC_BIN` before running integration tests.
-
-## 6. Candid & Wasm Utilities
-
-- Install the Candid compiler for type generation:
-  - `cargo install ic-wasm`
-  - `cargo install candid-extractor`
-- Install `didc` (via `npm install -g @dfinity/agent` or download the release) if you generate TypeScript bindings from `.did` files.
-- Keep `wasm-opt` (from Binaryen) available for release builds (`brew install binaryen` or `sudo apt install binaryen`).
-
-## 7. Recommended VS Code Extensions
-
-- `rust-lang.rust-analyzer`
-- `ms-vscode.vscode-typescript-next`
-- `dfinity-foundation.vscode-motoko` (for candid highlighting)
-- `esbenp.prettier-vscode`
-
-## 8. Environment Variables & Shell Setup
-
-- Add the following exports to your shell profile (`.zshrc`, `.bashrc`):
+- Download a PocketIC server release that matches your platform from the official repository’s Releases tab.
+  - macOS: `pocket-ic-arm64-darwin.gz` (Apple silicon) or `pocket-ic-x86_64-darwin.gz` (Intel).
+  - Linux: `pocket-ic-x86_64-linux.gz`; Linux containers on Apple silicon can use `pocket-ic-arm64-linux.gz`.
+- Save the archive as `pocket-ic.gz`, decompress it, and make it executable:
   ```bash
-  export DFX_NETWORK=local
-  export POCKET_IC_BIN="${POCKET_IC_BIN:-$(which pocket-ic)}"
-  export RUSTFLAGS="-C target-cpu=native"
+  gzip -d pocket-ic.gz
+  chmod +x pocket-ic
   ```
-- If you need to target multiple networks, override `DFX_NETWORK` per command (e.g., `DFX_NETWORK=ic` for mainnet).
-- For reproducible builds, consider using `direnv` to load per-directory environment files.
-
-## 9. Verifying the Setup
-
-Run the following smoke tests:
-
-```bash
-# Validate Rust toolchain
-cargo fmt --version
-cargo clippy --version
-
-# Check dfx replica
-dfx start --background --clean --host 127.0.0.1:4943
-dfx canister list
-dfx stop
-
-# Validate wasm-pack and pocket-ic
-wasm-pack --version
-pocket-ic --help
-```
-
-CI should also execute the project’s unit tests (`cargo test`, `npm test`) after the environment is primed.
+- Set `POCKET_IC_BIN` to the binary path (for example `export POCKET_IC_BIN="$(pwd)/pocket-ic"`). On macOS, clear the quarantine flag if prompted: `xattr -dr com.apple.quarantine pocket-ic`.
+- Confirm the install with `"$POCKET_IC_BIN" --version` or `"$POCKET_IC_BIN" --help`.
+- CI environments should cache the binary and export `POCKET_IC_BIN` before running integration tests.
