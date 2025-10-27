@@ -1,22 +1,17 @@
-import { keccak_256 } from '@noble/hashes/sha3';
-import { utf8ToBytes } from '@noble/hashes/utils';
-import { hmac } from '@noble/hashes/hmac';
-import { sha256 } from '@noble/hashes/sha256';
-import { etc, getPublicKey, sign } from '@noble/secp256k1';
+import { SigningKey, computeAddress, getBytes, hexlify, keccak256 } from 'ethers';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 export function deriveAddress(privateKey) {
     if (privateKey.length !== 32) {
         throw new Error('private key must be 32 bytes');
     }
-    const uncompressed = getPublicKey(privateKey, false);
-    const publicKey = uncompressed.slice(1);
-    const hash = keccak_256(publicKey);
-    return Uint8Array.from(hash.slice(12));
+    const privateKeyHex = hexlify(privateKey);
+    const addressHex = computeAddress(privateKeyHex);
+    return hexToBytes(addressHex);
 }
 export function authorizationMessage(canisterId, address, transportPublicKey, expiryNs, nonce) {
     const message = `ICP Stealth Authorization:\naddress: 0x${bytesToHex(address)}\ncanister: ${canisterId.toText()}\ntransport: 0x${bytesToHex(transportPublicKey)}\nexpiry_ns:${expiryNs}\nnonce:${nonce}`;
-    return eip191Message(utf8ToBytes(message));
+    return eip191Message(encoder.encode(message));
 }
 export function signAuthorization(message, privateKey) {
     if (message.length === 0) {
@@ -25,15 +20,10 @@ export function signAuthorization(message, privateKey) {
     if (privateKey.length !== 32) {
         throw new Error('private key must be 32 bytes');
     }
-    const digest = keccak_256(message);
-    ensureHmac();
-    const signature = sign(digest, privateKey);
-    const compact = signature.toCompactRawBytes();
-    const bytes = new Uint8Array(65);
-    bytes.set(compact, 0);
-    const recovery = signature.recovery ?? 0;
-    bytes[64] = recovery + 27;
-    return bytes;
+    const digestHex = keccak256(message);
+    const signingKey = new SigningKey(hexlify(privateKey));
+    const signature = signingKey.sign(digestHex);
+    return getBytes(signature.serialized);
 }
 export function unixTimeNs() {
     const nowMs = BigInt(Date.now());
@@ -66,16 +56,4 @@ export function addressToHex(address) {
 }
 export function messageToString(message) {
     return decoder.decode(message);
-}
-function ensureHmac() {
-    if (!etc.hmacSha256Sync) {
-        etc.hmacSha256Sync = (key, ...msgs) => {
-            const data = msgs.length === 0
-                ? new Uint8Array()
-                : msgs.length === 1
-                    ? msgs[0]
-                    : etc.concatBytes(...msgs);
-            return hmac(sha256, key, data);
-        };
-    }
 }

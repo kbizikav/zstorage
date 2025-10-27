@@ -1,0 +1,7 @@
+{
+  "name": "zstorage",
+  "private": true,
+  "workspaces": [
+    "ts-client"
+  ]
+}
