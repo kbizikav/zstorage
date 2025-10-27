@@ -217,7 +217,7 @@ fn normalize_address(address: &[u8]) -> Result<[u8; 20], String> {
     Ok(normalized)
 }
 
-fn invoice_signature_message(invoice_id: &[u8; 32]) -> Vec<u8> {
+pub fn invoice_signature_message(invoice_id: &[u8; 32]) -> Vec<u8> {
     let message = format!(
         "ICP Stealth Invoice Submission:\ninvoice_id: 0x{}",
         hex::encode(invoice_id)
