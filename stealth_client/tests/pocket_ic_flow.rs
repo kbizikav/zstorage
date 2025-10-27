@@ -33,33 +33,36 @@ fn pocket_ic_end_to_end_flow() {
     let key_manager_wasm = load_canister_wasm("key_manager");
     let storage_wasm = load_canister_wasm("storage");
 
-    // Enable the registry feature so VetKD keys are provisioned for the key manager
     let mut pic = PocketIcBuilder::new()
-        .with_application_subnet()
-        .with_ii_subnet()
+        .with_ii_subnet() // needs for vetkey feature
         .with_state(PocketIcState::new())
         .build();
 
-    let key_manager_id = pic.create_canister();
-    pic.add_cycles(key_manager_id, 2_000_000_000_000);
+    // deploy key manager canister
+    let key_manager_principal = pic.create_canister();
+    pic.add_cycles(key_manager_principal, 2_000_000_000_000);
     let key_manager_init = Encode!(&KeyManagerInitArgs {
         key_id_name: "test_key_1".to_string(),
     })
     .expect("failed to encode key manager init args");
-    pic.install_canister(key_manager_id, key_manager_wasm, key_manager_init, None);
+    pic.install_canister(
+        key_manager_principal,
+        key_manager_wasm,
+        key_manager_init,
+        None,
+    );
 
-    let storage_id = pic.create_canister();
-    pic.add_cycles(storage_id, 2_000_000_000_000);
+    // deploy storage canister
+    let storage_principal = pic.create_canister();
+    pic.add_cycles(storage_principal, 2_000_000_000_000);
     let storage_init =
         Encode!(&Option::<StorageInitArgs>::None).expect("failed to encode storage init args");
-    pic.install_canister(storage_id, storage_wasm, storage_init, None);
-
-    let replica_url = pic.make_live(None);
-    let replica_url = replica_url.to_string();
-    let key_manager_principal = key_manager_id;
-    let storage_principal = storage_id;
+    pic.install_canister(storage_principal, storage_wasm, storage_init, None);
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create Tokio runtime");
+    let replica_url = pic.make_live(None);
+    let replica_url = replica_url.to_string();
+
     rt.block_on(async move {
         let agent = Agent::builder()
             .with_url(replica_url)
@@ -143,39 +146,6 @@ fn ensure_pocket_ic_server() -> Option<PathBuf> {
         let path = PathBuf::from(path);
         if path.exists() {
             return Some(path);
-        }
-    }
-
-    if cfg!(windows) {
-        if let Ok(output) = Command::new("where").arg("pocket-ic.exe").output() {
-            if output.status.success() {
-                if let Ok(path) = String::from_utf8(output.stdout) {
-                    let trimmed = path.lines().next().map(str::trim).unwrap_or_default();
-                    if !trimmed.is_empty() {
-                        let path = PathBuf::from(trimmed);
-                        if path.exists() {
-                            std::env::set_var("POCKET_IC_BIN", &path);
-                            return Some(path);
-                        }
-                    }
-                }
-            }
-        }
-        return None;
-    }
-
-    if let Ok(output) = Command::new("which").arg("pocket-ic").output() {
-        if output.status.success() {
-            if let Ok(path) = String::from_utf8(output.stdout) {
-                let trimmed = path.trim();
-                if !trimmed.is_empty() {
-                    let path = PathBuf::from(trimmed);
-                    if path.exists() {
-                        std::env::set_var("POCKET_IC_BIN", &path);
-                        return Some(path);
-                    }
-                }
-            }
         }
     }
     None
