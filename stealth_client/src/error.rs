@@ -18,6 +18,8 @@ pub enum StealthError {
     IbeDecryption(String),
     #[error("invalid nonce length")]
     InvalidNonce,
+    #[error("announcement ignored: {0}")]
+    AnnouncementIgnored(&'static str),
     #[error("transport key error: {0}")]
     Transport(String),
 }

@@ -52,42 +52,41 @@ pub fn encrypt_payload<R: RngCore + CryptoRng>(
 pub fn decrypt_announcement(
     vet_key: &VetKey,
     announcement: &types::Announcement,
-) -> Result<Option<types::DecryptedAnnouncement>> {
-    if announcement.ibe_ciphertext.is_empty() {
-        return Ok(None);
-    }
-
+) -> Result<types::DecryptedAnnouncement> {
     let ibe_ciphertext = IbeCiphertext::deserialize(&announcement.ibe_ciphertext)
-        .map_err(StealthError::IbeDecryption)?;
+        .map_err(|_| StealthError::AnnouncementIgnored("invalid IBE ciphertext"))?;
     let mut session_key = match ibe_ciphertext.decrypt(vet_key) {
         Ok(key) => key,
-        Err(_err) => return Ok(None),
+        Err(_err) => {
+            // Wrong vet key: treat as a normal miss, not an error.
+            return Err(StealthError::AnnouncementIgnored("vet key mismatch"));
+        }
     };
     if session_key.len() != 32 {
-        return Err(StealthError::IbeDecryption(
-            "unexpected session key length".to_string(),
+        return Err(StealthError::AnnouncementIgnored(
+            "unexpected session key length",
         ));
     }
 
-    let cipher =
-        Aes256Gcm::new_from_slice(&session_key).map_err(|_| StealthError::DecryptionFailed)?;
+    let cipher = Aes256Gcm::new_from_slice(&session_key)
+        .map_err(|_| StealthError::AnnouncementIgnored("invalid AES key length"))?;
     let nonce_arr: [u8; 12] = announcement
         .nonce
         .as_slice()
         .try_into()
-        .map_err(|_| StealthError::InvalidNonce)?;
+        .map_err(|_| StealthError::AnnouncementIgnored("invalid nonce length"))?;
     let nonce_ga = Nonce::from(nonce_arr);
     let plaintext = cipher
         .decrypt(&nonce_ga, announcement.ciphertext.as_ref())
-        .map_err(|_| StealthError::DecryptionFailed)?;
+        .map_err(|_| StealthError::AnnouncementIgnored("ciphertext authentication failed"))?;
 
     session_key.iter_mut().for_each(|b| *b = 0);
 
-    Ok(Some(types::DecryptedAnnouncement {
+    Ok(types::DecryptedAnnouncement {
         id: announcement.id,
         plaintext,
         created_at_ns: announcement.created_at_ns,
-    }))
+    })
 }
 
 pub fn scan_announcements(
@@ -96,9 +95,11 @@ pub fn scan_announcements(
 ) -> Result<Vec<types::DecryptedAnnouncement>> {
     let mut decrypted = Vec::new();
     for announcement in announcements {
-        if let Some(message) = decrypt_announcement(vet_key, announcement)? {
-            decrypted.push(message);
-        }
+        match decrypt_announcement(vet_key, announcement) {
+            Ok(message) => decrypted.push(message),
+            Err(StealthError::AnnouncementIgnored(_)) => continue,
+            Err(err) => return Err(err),
+        };
     }
     Ok(decrypted)
 }
