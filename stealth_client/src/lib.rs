@@ -2,6 +2,7 @@
 
 pub mod types;
 
+pub mod authorization;
 pub mod client;
 pub mod encryption;
 pub mod error;

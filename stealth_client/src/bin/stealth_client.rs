@@ -1,13 +1,12 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use candid::Principal;
 use clap::Parser;
 use ic_agent::{identity::AnonymousIdentity, Agent};
 use k256::ecdsa::SigningKey;
 use key_manager::authorization::authorization_message;
 use rand::{rngs::OsRng, RngCore};
-use sha3::{Digest, Keccak256};
-use std::time::{SystemTime, UNIX_EPOCH};
 use stealth_client::{
+    authorization::{derive_address, sign_authorization, unix_time_ns},
     client::StealthCanisterClient,
     encryption::{encrypt_payload, scan_announcements},
     recipient, types,
@@ -171,37 +170,6 @@ async fn run_demo_flow(cli: &Cli, client: &StealthCanisterClient) -> Result<()> 
     }
 
     Ok(())
-}
-
-fn sign_authorization(message: &[u8], signing_key: &SigningKey) -> Result<[u8; 65]> {
-    let digest: [u8; 32] = Keccak256::digest(message).into();
-    let (signature, recovery_id) = signing_key
-        .sign_prehash_recoverable(&digest)
-        .map_err(|err| anyhow!("failed to sign authorization message: {err}"))?;
-    let mut bytes = [0u8; 65];
-    bytes[..64].copy_from_slice(&signature.to_bytes());
-    bytes[64] = recovery_id.to_byte().saturating_add(27);
-    Ok(bytes)
-}
-
-fn derive_address(signing_key: &SigningKey) -> [u8; 20] {
-    let verifying_key = signing_key.verifying_key();
-    let encoded = verifying_key.to_encoded_point(false);
-    let public_key = encoded.as_bytes();
-    let digest = Keccak256::digest(&public_key[1..]);
-    let mut address = [0u8; 20];
-    address.copy_from_slice(&digest[12..]);
-    address
-}
-
-fn unix_time_ns() -> Result<u64> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system time is before Unix epoch")?;
-    Ok(now
-        .as_secs()
-        .saturating_mul(1_000_000_000)
-        .saturating_add(now.subsec_nanos() as u64))
 }
 
 fn is_local_replica(url: &str) -> bool {

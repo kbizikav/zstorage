@@ -28,8 +28,8 @@ pub fn encrypt_payload<R: RngCore + CryptoRng>(
     let mut nonce_bytes = [0u8; NONCE_LEN];
     rng.fill_bytes(&mut nonce_bytes);
 
-    let cipher = Aes256Gcm::new_from_slice(&session_key)
-        .map_err(|_| StealthError::EncryptionFailed)?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&session_key).map_err(|_| StealthError::EncryptionFailed)?;
     let nonce_ga = Nonce::from(nonce_bytes);
     let ciphertext = cipher
         .encrypt(&nonce_ga, plaintext)

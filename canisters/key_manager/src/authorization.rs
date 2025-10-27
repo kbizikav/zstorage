@@ -1,4 +1,4 @@
-use alloy_primitives::{Signature as AlloySignature, B256};
+use alloy_primitives::{utils::eip191_message, Signature as AlloySignature, B256};
 use candid::Principal;
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
@@ -22,23 +22,19 @@ pub fn authorization_message(
     expiry_ns: u64,
     nonce: u64,
 ) -> Vec<u8> {
-    let body = format!(
+    let message = format!(
         "ICP Stealth Authorization:\naddress: 0x{}\ncanister: {}\ntransport: 0x{}\nexpiry_ns:{expiry_ns}\nnonce:{nonce}",
         hex::encode(address),
         canister_id.to_text(),
         hex::encode(transport_public_key),
     );
-    let prefix = format!("\x19Ethereum Signed Message:\n{}", body.len());
-    [prefix.into_bytes(), body.into_bytes()].concat()
+    eip191_message(message.as_bytes())
 }
 
 pub fn recover_address_from_signature(
     message: &[u8],
     signature: &[u8],
 ) -> Result<Address, AuthorizationError> {
-    if signature.len() != 65 {
-        return Err(AuthorizationError::InvalidLength);
-    }
     let signature =
         AlloySignature::from_raw(signature).map_err(|_| AuthorizationError::InvalidSignature)?;
     let digest = Keccak256::digest(message);

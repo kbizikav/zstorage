@@ -5,11 +5,10 @@ use key_manager::authorization::authorization_message;
 use pocket_ic::{PocketIcBuilder, PocketIcState};
 use rand::{rngs::OsRng, RngCore};
 use serde::Serialize;
-use sha3::{Digest, Keccak256};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
-use std::time::{SystemTime, UNIX_EPOCH};
+use stealth_client::authorization::{derive_address, sign_authorization, unix_time_ns};
 use stealth_client::client::StealthCanisterClient;
 use stealth_client::encryption::{encrypt_payload, scan_announcements};
 use stealth_client::{recipient, types};
@@ -98,7 +97,9 @@ fn pocket_ic_end_to_end_flow() {
         let transport = recipient::prepare_transport_key();
 
         // expiry in 10 minutes
-        let expiry_ns = unix_time_ns().saturating_add(600 * 1_000_000_000);
+        let expiry_ns = unix_time_ns()
+            .expect("system time before unix epoch")
+            .saturating_add(600 * 1_000_000_000);
         let nonce = rng.next_u64();
         let auth_message = authorization_message(
             key_manager_principal,
@@ -107,7 +108,8 @@ fn pocket_ic_end_to_end_flow() {
             expiry_ns,
             nonce,
         );
-        let signature = sign_authorization(&auth_message, &signing_key);
+        let signature = sign_authorization(&auth_message, &signing_key)
+            .expect("failed to sign authorization message");
 
         let request = types::EncryptedViewKeyRequest {
             address: address.to_vec(),
@@ -196,34 +198,4 @@ fn workspace_root() -> PathBuf {
         .parent()
         .expect("crate dir has parent")
         .to_path_buf()
-}
-
-fn derive_address(signing_key: &SigningKey) -> [u8; 20] {
-    let verifying_key = signing_key.verifying_key();
-    let encoded = verifying_key.to_encoded_point(false);
-    let public_key = encoded.as_bytes();
-    let digest = Keccak256::digest(&public_key[1..]);
-    let mut address = [0u8; 20];
-    address.copy_from_slice(&digest[12..]);
-    address
-}
-
-fn sign_authorization(message: &[u8], signing_key: &SigningKey) -> [u8; 65] {
-    let digest: [u8; 32] = Keccak256::digest(message).into();
-    let (signature, recovery_id) = signing_key
-        .sign_prehash_recoverable(&digest)
-        .expect("failed to sign authorization message");
-    let mut bytes = [0u8; 65];
-    bytes[..64].copy_from_slice(&signature.to_bytes());
-    bytes[64] = recovery_id.to_byte().saturating_add(27);
-    bytes
-}
-
-fn unix_time_ns() -> u64 {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time before unix epoch");
-    now.as_secs()
-        .saturating_mul(1_000_000_000)
-        .saturating_add(now.subsec_nanos() as u64)
 }

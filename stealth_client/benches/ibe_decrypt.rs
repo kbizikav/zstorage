@@ -32,12 +32,7 @@ fn forge_sample(len: usize) -> (Arc<IbeCiphertext>, VetKey, Vec<u8>) {
     let mut session_key = vec![0u8; len];
     rng.fill_bytes(&mut session_key);
 
-    let ciphertext = IbeCiphertext::encrypt(
-        &derived_public_key,
-        &identity,
-        &session_key,
-        &seed,
-    );
+    let ciphertext = IbeCiphertext::encrypt(&derived_public_key, &identity, &session_key, &seed);
 
     let vetkey = forge_vetkey(&dpk_affine, identity.value(), sk);
 
