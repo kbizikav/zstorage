@@ -1,17 +1,19 @@
 [workspace]
-members = [
-    "canisters/key_manager",
-    "canisters/storage",
-    "stealth_client",
-]
+members = ["canisters/key_manager", "canisters/storage", "stealth_client"]
 resolver = "2"
 
 [workspace.dependencies]
 anyhow = "1.0"
 base64 = "0.22"
-bls12_381 = { version = "0.8", default-features = false, features = ["alloc", "groups"] }
+bls12_381 = { version = "0.8", default-features = false, features = [
+    "alloc",
+    "groups",
+] }
 subtle = "2.5"
-aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
+aes-gcm = { version = "0.10", default-features = false, features = [
+    "aes",
+    "alloc",
+] }
 hex = "0.4"
 hkdf = "0.12"
 ic-cdk = "0.18.7"
@@ -19,15 +21,16 @@ ic-cdk-macros = "0.18.7"
 ic-ledger-types = "0.15"
 ic-stable-structures = "0.7.2"
 ic-vetkeys = "0.5"
-alloy-primitives = { version = "1.4.1", default-features = false, features = ["k256"] }
-rand = { version = "0.8", default-features = false, features = ["std"] }
+alloy-primitives = { version = "1.4.1", default-features = false, features = [
+    "k256",
+] }
+rand = { version = "0.8.5", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"
 sha2 = "0.10"
 sha3 = "0.10"
 candid = "0.10.20"
-getrandom = { version = "0.2.16", features = ["js"] }
-thiserror = "1.0"
+thiserror = "2.0"
 
 [workspace.package]
-edition = "2021"
+edition = "2024"

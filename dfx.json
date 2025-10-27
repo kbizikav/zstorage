@@ -25,7 +25,7 @@
       "type": "ephemeral"
     }
   },
-  "output_env_file": ".dfx/local/canister_ids.json",
+  "output_env_file": ".env",
   "version": 1
 }
 
