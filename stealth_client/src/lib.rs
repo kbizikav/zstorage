@@ -3,29 +3,15 @@
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use alloy_primitives::{Signature as AlloySignature, B256};
-use bls12_381::{G2Affine, G2Projective, Scalar};
 use candid::{Decode, Encode, Principal};
-use hkdf::Hkdf;
 use ic_agent::{Agent, AgentError};
 use rand::rngs::OsRng;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
 use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
 
-pub mod config {
-    /// Default HKDF salt for deriving symmetric keys.
-    pub const HKDF_SALT: &[u8] = b"icp-stealth";
-    /// HKDF info label for the AES-256-GCM encryption key.
-    pub const HKDF_INFO_ENC: &[u8] = b"aes-gcm-256";
-    /// HKDF info label for the one-byte view tag extraction.
-    pub const HKDF_INFO_TAG: &[u8] = b"view-tag";
-    /// Domain separator used when deriving the viewing secret scalar from a vetKey.
-    pub const VIEW_KEY_DOMAIN: &str = "icp-stealth-view-sk";
-    /// Scheme identifier appended to the EVM address when deriving VetKD inputs.
-    pub const SCHEME_ID: &[u8] = b"icp-stealth-bls-g2-v1";
-}
+use ic_vetkeys::{DerivedPublicKey, IbeCiphertext, IbeIdentity, IbeSeed, VetKey};
 
 pub mod types {
     use super::*;
@@ -33,23 +19,17 @@ pub mod types {
 
     #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
     pub struct AnnouncementInput {
-        pub view_tag: u8,
-        pub ephemeral_public_key: Vec<u8>,
+        pub ibe_ciphertext: Vec<u8>,
         pub ciphertext: Vec<u8>,
         pub nonce: Vec<u8>,
-        pub payload_type: Option<String>,
-        pub metadata: Option<Vec<u8>>,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
     pub struct Announcement {
         pub id: u64,
-        pub view_tag: u8,
-        pub ephemeral_public_key: Vec<u8>,
+        pub ibe_ciphertext: Vec<u8>,
         pub ciphertext: Vec<u8>,
         pub nonce: Vec<u8>,
-        pub payload_type: Option<String>,
-        pub metadata: Option<Vec<u8>>,
         pub created_at_ns: u64,
     }
 
@@ -63,7 +43,6 @@ pub mod types {
     pub struct DecryptedAnnouncement {
         pub id: u64,
         pub plaintext: Vec<u8>,
-        pub metadata: Option<Vec<u8>>,
         pub created_at_ns: u64,
     }
 
@@ -87,16 +66,18 @@ pub mod types {
 pub enum StealthError {
     #[error("invalid address length: expected 20 bytes")]
     InvalidAddress,
-    #[error("invalid G2 encoding")]
-    InvalidG2Encoding,
+    #[error("invalid derived public key")]
+    InvalidDerivedPublicKey,
     #[error("encryption failure")]
     EncryptionFailed,
     #[error("decryption failure")]
     DecryptionFailed,
-    #[error("HKDF expansion failed")]
-    Hkdf,
-    #[error("scalar conversion failed")]
-    InvalidScalar,
+    #[error("IBE encryption failed: {0}")]
+    IbeEncryption(String),
+    #[error("IBE decryption failed: {0}")]
+    IbeDecryption(String),
+    #[error("invalid nonce length")]
+    InvalidNonce,
     #[error("transport key error: {0}")]
     Transport(String),
 }
@@ -220,58 +201,24 @@ impl StealthCanisterClient {
     }
 }
 
-pub struct EphemeralKeyPair {
-    pub secret: [u8; 32],
-    pub public: [u8; 96],
-}
-
 pub struct EncryptionResult {
     pub announcement: types::AnnouncementInput,
-    pub ephemeral_secret: [u8; 32],
-    pub view_tag_key: [u8; 32],
-}
-
-pub fn generate_ephemeral_keypair<R: RngCore + CryptoRng>(rng: &mut R) -> EphemeralKeyPair {
-    loop {
-        let mut candidate = [0u8; 32];
-        rng.fill_bytes(&mut candidate);
-        let scalar = Scalar::from_bytes(&candidate).into_option();
-        if let Some(scalar) = scalar {
-            if scalar == Scalar::zero() {
-                continue;
-            }
-            let public = G2Affine::from(G2Projective::generator() * scalar).to_compressed();
-            return EphemeralKeyPair {
-                secret: scalar.to_bytes(),
-                public,
-            };
-        }
-    }
 }
 
 pub fn encrypt_payload<R: RngCore + CryptoRng>(
     rng: &mut R,
     view_public_key_bytes: &[u8],
+    address: [u8; 20],
     plaintext: &[u8],
-    payload_type: Option<String>,
-    metadata: Option<Vec<u8>>,
     nonce_override: Option<[u8; 12]>,
 ) -> Result<EncryptionResult> {
-    let view_public = decompress_g2(view_public_key_bytes)?;
-    let ephemeral = generate_ephemeral_keypair(rng);
-    let secret_scalar = Scalar::from_bytes(&ephemeral.secret)
-        .into_option()
-        .ok_or(StealthError::InvalidScalar)?;
-    let shared_projective = G2Projective::from(view_public) * secret_scalar;
-    let shared_bytes = G2Affine::from(shared_projective).to_compressed();
-    let hk = Hkdf::<Sha256>::new(Some(config::HKDF_SALT), &shared_bytes);
+    let derived_public_key = DerivedPublicKey::deserialize(view_public_key_bytes)
+        .map_err(|_| StealthError::InvalidDerivedPublicKey)?;
+    let identity = IbeIdentity::from_bytes(&address);
+    let seed = IbeSeed::random(rng);
 
     let mut aes_key = [0u8; 32];
-    hk.expand(config::HKDF_INFO_ENC, &mut aes_key)
-        .map_err(|_| StealthError::Hkdf)?;
-    let mut tag_key = [0u8; 32];
-    hk.expand(config::HKDF_INFO_TAG, &mut tag_key)
-        .map_err(|_| StealthError::Hkdf)?;
+    rng.fill_bytes(&mut aes_key);
 
     let nonce_bytes = match nonce_override {
         Some(nonce) => nonce,
@@ -292,70 +239,68 @@ pub fn encrypt_payload<R: RngCore + CryptoRng>(
         array.to_vec()
     };
 
+    let ibe_ciphertext =
+        IbeCiphertext::encrypt(&derived_public_key, &identity, &aes_key, &seed).serialize();
+
+    aes_key.fill(0);
+
     let announcement = types::AnnouncementInput {
-        view_tag: tag_key[0],
-        ephemeral_public_key: Vec::from(ephemeral.public),
+        ibe_ciphertext,
         ciphertext,
         nonce: nonce_vec,
-        payload_type,
-        metadata,
     };
 
-    Ok(EncryptionResult {
-        announcement,
-        ephemeral_secret: ephemeral.secret,
-        view_tag_key: tag_key,
-    })
+    Ok(EncryptionResult { announcement })
 }
 
 pub fn decrypt_announcement(
-    view_secret: &[u8; 32],
+    vet_key: &VetKey,
     announcement: &types::Announcement,
 ) -> Result<Option<types::DecryptedAnnouncement>> {
-    let view_scalar = Scalar::from_bytes(view_secret)
-        .into_option()
-        .ok_or(StealthError::InvalidScalar)?;
-    let ephemeral = decompress_g2(&announcement.ephemeral_public_key)?;
-    let shared_projective = G2Projective::from(ephemeral) * view_scalar;
-    let shared_bytes = G2Affine::from(shared_projective).to_compressed();
-    let hk = Hkdf::<Sha256>::new(Some(config::HKDF_SALT), &shared_bytes);
-
-    let mut tag_key = [0u8; 32];
-    hk.expand(config::HKDF_INFO_TAG, &mut tag_key)
-        .map_err(|_| StealthError::Hkdf)?;
-    if tag_key[0] != announcement.view_tag {
+    if announcement.ibe_ciphertext.is_empty() {
         return Ok(None);
     }
 
-    let mut aes_key = [0u8; 32];
-    hk.expand(config::HKDF_INFO_ENC, &mut aes_key)
-        .map_err(|_| StealthError::Hkdf)?;
-    let cipher = Aes256Gcm::new_from_slice(&aes_key).map_err(|_| StealthError::DecryptionFailed)?;
+    let ibe_ciphertext = IbeCiphertext::deserialize(&announcement.ibe_ciphertext)
+        .map_err(StealthError::IbeDecryption)?;
+    let mut session_key = match ibe_ciphertext.decrypt(vet_key) {
+        Ok(key) => key,
+        Err(_err) => return Ok(None),
+    };
+    if session_key.len() != 32 {
+        return Err(StealthError::IbeDecryption(
+            "unexpected session key length".to_string(),
+        ));
+    }
+
+    let cipher =
+        Aes256Gcm::new_from_slice(&session_key).map_err(|_| StealthError::DecryptionFailed)?;
     let nonce_arr: [u8; 12] = announcement
         .nonce
         .as_slice()
         .try_into()
-        .map_err(|_| StealthError::DecryptionFailed)?;
+        .map_err(|_| StealthError::InvalidNonce)?;
     let nonce_ga = Nonce::from(nonce_arr);
     let plaintext = cipher
         .decrypt(&nonce_ga, announcement.ciphertext.as_ref())
         .map_err(|_| StealthError::DecryptionFailed)?;
 
+    session_key.iter_mut().for_each(|b| *b = 0);
+
     Ok(Some(types::DecryptedAnnouncement {
         id: announcement.id,
         plaintext,
-        metadata: announcement.metadata.clone(),
         created_at_ns: announcement.created_at_ns,
     }))
 }
 
 pub fn scan_announcements(
-    view_secret: &[u8; 32],
+    vet_key: &VetKey,
     announcements: &[types::Announcement],
 ) -> Result<Vec<types::DecryptedAnnouncement>> {
     let mut decrypted = Vec::new();
     for announcement in announcements {
-        if let Some(message) = decrypt_announcement(view_secret, announcement)? {
+        if let Some(message) = decrypt_announcement(vet_key, announcement)? {
             decrypted.push(message);
         }
     }
@@ -394,14 +339,6 @@ pub mod recipient {
             .decrypt_and_verify(transport_secret, &derived, &[])
             .map_err(|e| StealthError::Transport(e))?;
         Ok(vet_key)
-    }
-
-    /// Derive the 32-byte viewing secret scalar from a VetKey.
-    pub fn derive_view_secret(vet_key: &VetKey) -> Result<[u8; 32]> {
-        let derived = vet_key.derive_symmetric_key(config::VIEW_KEY_DOMAIN, 32);
-        derived
-            .try_into()
-            .map_err(|_| StealthError::Transport("invalid view secret length".into()))
     }
 }
 
@@ -442,25 +379,15 @@ pub mod sender {
     }
 }
 
-fn decompress_g2(bytes: &[u8]) -> Result<G2Affine> {
-    if bytes.len() != 96 {
-        return Err(StealthError::InvalidG2Encoding);
-    }
-    let mut array = [0u8; 96];
-    array.copy_from_slice(bytes);
-    G2Affine::from_compressed(&array)
-        .into_option()
-        .ok_or(StealthError::InvalidG2Encoding)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn ephemeral_key_generation() {
+    fn encrypt_rejects_invalid_public_key() {
         let mut rng = OsRng;
-        let pair = generate_ephemeral_keypair(&mut rng);
-        assert_eq!(pair.public.len(), 96);
+        let view_public_key = vec![0u8; 95];
+        let result = encrypt_payload(&mut rng, &view_public_key, [0u8; 20], b"hello", None);
+        assert!(matches!(result, Err(StealthError::InvalidDerivedPublicKey)));
     }
 }

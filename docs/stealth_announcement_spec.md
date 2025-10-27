@@ -3,18 +3,18 @@
 ## 1. Objectives
 
 - Deliver stealth payment announcements on the Internet Computer Protocol (ICP) without forcing recipients to pre-register public keys.
-- Leverage vetKD (verifiably encrypted threshold key derivation) so the key manager canister derives viewing keys from a shared vetKey while recipients alone recover the secret material.
-- Retain compatibility with the ERC-5564 one-byte view tag scheme so recipients can filter announcements efficiently.
+- Leverage vetKD (verifiably encrypted threshold key derivation) so the key manager canister derives per-recipient IBE private keys from a shared master secret while recipients alone recover the secret material.
+- Let recipients detect announcements addressed to them by attempting identity-based decryption with keys derived through vetKD.
 
 ## 2. Actors and Components
 
 - **Sender** - Encrypts a payload for the recipient and publishes the announcement to the storage canister.
-- **Recipient** - Controls an EVM-compatible address, registers a transport key, and scans announcements for messages addressed to that address.
+- **Recipient** - Controls an EVM-compatible address, registers a transport key, and scans announcements by attempting IBE decryption per record.
 - **Key manager canister**
   - Stores vetKD configuration (key identifier, domain separator, optional master public key bytes).
-  - Derives per-recipient viewing keys through management canister vetKD calls without persisting recipient secrets.
-  - Issues encrypted vetKeys to authenticated recipients using recipient supplied transport keys.
-- **Storage canister** - Persists announcement records (ephemeral public key, view tag, ciphertext, metadata) and exposes paginated query APIs.
+  - Derives per-recipient IBE private keys through management canister vetKD calls without persisting recipient secrets.
+  - Issues encrypted private keys to authenticated recipients using recipient supplied transport keys.
+- **Storage canister** - Persists announcement records (IBE ciphertext wrapper, AES-GCM ciphertext, nonce) and exposes paginated query APIs.
 - **Client libraries (Rust / TypeScript)** - Provide high-level helpers for senders and recipients, including key derivation, encryption, and scanning logic.
 
 ## 3. Cryptographic Foundations
@@ -22,12 +22,12 @@
 ### 3.1 vetKD Master Configuration
 
 - The key manager is provisioned with `VetKDKeyId { curve: bls12_381_g2, name: "key_1" }` on mainnet (or `"test_key_1"` / `"dfx_test_key"` on development networks) and a domain separator `context = b"icp-stealth-announcement-v1"`.
-- The corresponding master public key bytes may be stored in configuration for clients that need to verify viewing keys offline, but canister derivations rely exclusively on vetKD system calls.
+- The corresponding master public key bytes may be stored in configuration for clients that need to verify IBE computations offline, but canister derivations rely exclusively on vetKD system calls.
 - Inputs to `vetkd_derive_key` currently use an empty vector (`input = []`); the derivation is fully bound by the context field.
 
-### 3.2 Viewing Key Derivation (BLS12-381 G2)
+### 3.2 Identity Hash Derivation (Boneh-Franklin IBE)
 
-1. `get_view_public_key` invokes the management canister vetKD public key API. The request uses the recipient address bytes in the context to keep the derivation aligned with the later encrypted key flow.
+1. `get_view_public_key` invokes the management canister vetKD public key API. The request uses the recipient address bytes in the context so the derived point aligns with the identity used by both senders and recipients.
    ```rust
    use ic_cdk::management_canister::{vetkd_public_key, VetKDPublicKeyArgs};
 
@@ -40,24 +40,21 @@
 
        let reply = vetkd_public_key(&request)
            .await
-           .expect("failed to derive vetKD public key");
+           .expect("failed to derive vetKD identity point");
        reply.public_key
    }
    ```
-   _Note:_ the same public key derivation can be reproduced off-chain with the published vetKD algorithms; the system call simply delegates the canonical computation to the IC.
-2. The key manager never caches the result. It recomputes `v_pk` on each query to avoid storing recipient state.
-3. Recipients who later decrypt a vetKD response can verify correctness by checking `v_pk == v_sk * G2_BASE`.
+   _Note:_ the same derivation can be reproduced off-chain with the published vetKD algorithms; the system call simply delegates the canonical computation to the IC.
+2. The key manager never caches the result. It recomputes `q_id` on each query to avoid storing recipient state.
+3. Recipients who later decrypt a vetKD response can verify correctness by pairing `q_id` with the recovered private key `d_id` and confirming it matches the published master public key parameters.
 
-### 3.3 Sender Encryption Workflow
+### 3.3 Sender IBE Encryption Workflow
 
-1. Fetch the recipient viewing key `v_pk` from the key manager.
-2. Sample an ephemeral scalar `e_sk ∈ [1, r-1]` and compute the compressed G2 point `e_pk = e_sk * G2_BASE`.
-3. Derive the shared point `S = e_sk * v_pk`, convert it to compressed bytes, and feed HKDF with salt `"icp-stealth"` to obtain:
-   - `k_enc` using info `"aes-gcm-256"`.
-   - `k_tag` using info `"view-tag"`.
-4. Produce `view_tag = k_tag[0]` (one byte).
-5. Encrypt the payload with AES-GCM-256, using either a random 96-bit nonce or one produced deterministically by HKDF.
-6. Submit the announcement `{ e_pk_compressed, view_tag, ciphertext, nonce, payload_type, metadata }` to the storage canister.
+1. Call `get_view_public_key` on the key manager to obtain the derived public key bytes (`DerivedPublicKey`) bound to the recipient address.
+2. Generate a fresh 256-bit session key `k_enc` and a 96-bit AES-GCM nonce.
+3. Encrypt the payload with AES-GCM-256 using `(k_enc, nonce)` to produce the announcement ciphertext.
+4. Build an `ic_vetkeys::IbeIdentity` from the recipient address, sample an `IbeSeed::random`, and invoke `IbeCiphertext::encrypt` with the derived public key, identity, session key, and seed. Serialize the result to produce `ibe_ciphertext`.
+5. Submit the announcement `{ ibe_ciphertext, ciphertext, nonce }` to the storage canister.
 
 ### 3.4 Recipient Decryption Workflow
 
@@ -69,7 +66,7 @@
    - `key_id = bls12_381_g2_test_key()` (or `"key_1"` in production).
    - `transport_public_key` supplied by the recipient.
    The management canister returns `encrypted_key`, which only the recipient can decrypt with the matching transport secret.
-4. The recipient decrypts the vetKD payload to recover the viewing scalar `v_sk`, scans announcements, filters by matching `view_tag`, and decrypts ciphertexts using the shared secret derived from `v_sk` and each announcement’s `e_pk`.
+4. After decrypting the vetKD payload, the recipient obtains the VetKey for the address. For each announcement, the client deserializes `ibe_ciphertext`, decrypts it with the VetKey to recover `k_enc`, and attempts AES-GCM decryption with `(k_enc, nonce)`. Authentication success confirms the announcement is addressed to the recipient; failures imply the message targets someone else.
 
 ## 4. Canister Interfaces
 
@@ -84,12 +81,12 @@ Public methods:
 | Method | Type | Description |
 | --- | --- | --- |
 | `get_master_public_key() -> Vec<u8>` | query | Returns the configured vetKD master public key for offline verification. |
-| `get_view_public_key(address: [u8; 20]) -> ViewPublicKeyResponse` | query | Calls `vetkd_public_key` and returns the compressed G2 viewing key plus metadata. |
-| `request_encrypted_view_key(req: EncryptedViewKeyRequest) -> EncryptedViewKeyResponse` | update | Verifies the wallet signature, enforces nonce/expiry, invokes `vetkd_derive_key`, and returns the encrypted vetKey bound to the recipient’s transport key. |
+| `get_view_public_key(address: [u8; 20]) -> ViewPublicKeyResponse` | query | Calls `vetkd_public_key` and returns the hashed identity point plus optional master public key bytes for senders. |
+| `request_encrypted_view_key(req: EncryptedViewKeyRequest) -> EncryptedViewKeyResponse` | update | Verifies the wallet signature, enforces nonce/expiry, invokes `vetkd_derive_key`, and returns the encrypted IBE private key bound to the recipient’s transport key. |
 
 Authorization message (EIP-191 style):
 ```
-ICP Stealth View Key Request
+ICP Stealth IBE Key Request
 Address: 0x<recipient_hex>
 TransportPub: <base64>
 Expiry: <ISO8601 UTC>
@@ -100,17 +97,15 @@ Nonce: <u64>
 
 State:
 - Vector of `Announcement` records with an optional capacity cap.
-- Derived metrics (e.g., counts by `view_tag`) if needed.
+- Derived metrics (e.g., counts per ciphertext size bucket) if needed.
 
 Record layout:
 ```
 struct Announcement {
-    ephemeral_pubkey: Vec<u8>,  // Compressed BLS12-381 G2 (96 bytes)
-    view_tag: u8,
-    metadata_version: u8,
-    ciphertext: Vec<u8>,
+    ibe_ciphertext: Vec<u8>,  // Serialized ic_vetkeys::IbeCiphertext
+    ciphertext: Vec<u8>,      // AES-GCM ciphertext
     nonce: [u8; 12],
-    posted_at_ns: u64,
+    created_at_ns: u64,
 }
 ```
 
@@ -124,24 +119,25 @@ Public methods:
 
 Business rules:
 - Enforce strict payload size limits to control cycles and storage usage.
-- Track `(view_tag, nonce)` pairs to detect trivial replay within a recent window.
+- Track hashes of `(ibe_ciphertext, nonce)` pairs to detect trivial replay within a recent window.
 - Consider rate limiting or deposits for spam mitigation in future iterations.
 
 ## 5. Client Libraries
 
-### 5.1 Rust Crate (`crates/stealth_client`)
+### 5.1 Rust Crate (`stealth_client`)
 
-- `config` - Shared constants and helper functions for canister IDs and vetKD key identifiers.
-- `sender` - Fetches viewing keys, generates ephemeral keys, and encrypts payloads into `AnnouncementInput`.
-- `recipient` - Manages transport keys, prepares signed requests, decrypts vetKD replies, and scans announcements.
 - `types` - Rust structs mirroring the candid interface exported by the canisters.
-- Testing - Unit tests for HKDF/tag derivations and integration tests using PocketIC to validate end-to-end flows.
+- `StealthCanisterClient` - Thin wrapper around the candid interfaces for key manager and storage canisters.
+- `encrypt_payload` - Uses the derived public key from `get_view_public_key` to produce an IBE-wrapped session key plus AES-GCM ciphertext.
+- `recipient` - Manages transport keys, prepares signed requests, decrypts vetKD replies, and scans announcements by attempting IBE decryption per ciphertext.
+- `sender` - Provides helpers for authorization message construction and address recovery.
+- Testing - Integration tests with PocketIC validate the end-to-end IBE + AES flow.
 
 ### 5.2 TypeScript Package (`ts-client`)
 
 - `config.ts` - Loads canister IDs and vetKD settings for Node.js and browser environments.
-- `sender.ts` - Fetches viewing keys through `@dfinity/agent`, generates ephemeral keys (via WASM or pure JS fallback), and returns announcement payloads.
-- `recipient.ts` - Wraps vetKD transport key generation, authorization signing helpers, vetKD decryption, and storage scanning logic.
+- `sender.ts` - Fetches encryption parameters through `@dfinity/agent`, runs the IBE encryption primitives (WASM or pure JS fallback), and returns announcement payloads.
+- `recipient.ts` - Wraps vetKD transport key generation, authorization signing helpers, vetKD decryption, and storage scanning logic that attempts IBE decryption per record.
 - `types.ts` - Type definitions generated from candid using `didc` and re-exported for consumers.
 - Testing - Browser and Node.js suites that exercise HKDF determinism, vetKD round-trips, and PocketIC-backed integration flows.
 
@@ -151,7 +147,7 @@ Business rules:
 
 1. Start a clean replica: `dfx start --background --clean --host 127.0.0.1:4943`.
 2. Deploy the key manager and storage canisters; configure `dfx_test_key` (or another development key ID) in the key manager settings.
-3. Use `dfx canister call` commands to request viewing keys and encrypted vetKeys while iterating on the client libraries.
+3. Use `dfx canister call` commands to invoke `get_view_public_key` and `request_encrypted_view_key`, retrieving the identity point and encrypted IBE private key while iterating on the client libraries.
 
 ### 6.2 PocketIC Automation
 
@@ -166,8 +162,8 @@ Business rules:
 
 ## 8. Security Considerations
 
-- **Transport key confidentiality** - Recipients must generate new transport key pairs per request; only the encrypted vetKey leaves the management canister.
+- **Transport key confidentiality** - Recipients must generate new transport key pairs per request; only the encrypted IBE private key leaves the management canister.
 - **Replay protection** - Signed requests include nonces and expiries enforced by the key manager to block replayed authorizations.
 - **Cycle budgeting** - Each `vetkd_derive_key` call incurs management canister cycles; controllers must provision adequate cycles for high-volume use.
-- **View tag leakage** - Exposing a single byte of `k_tag` enables fast filtering while leaving 124 bits of secrecy, consistent with ERC-5564 goals.
-- **Payload hygiene** - Hard limits on plaintext and metadata sizes help prevent denial-of-service via oversized submissions.
+- **Ciphertext probing** - Recipients only confirm ownership after AES-GCM authentication succeeds; failed decryptions reveal no information about other recipients beyond the need to attempt decryption.
+- **Payload hygiene** - Hard limits on ciphertext and IBE wrapper sizes help prevent denial-of-service via oversized submissions.

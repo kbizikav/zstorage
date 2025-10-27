@@ -37,8 +37,6 @@ struct Cli {
         help = "Plaintext message to encrypt and announce"
     )]
     message: String,
-    #[arg(long, help = "Optional payload type (stored alongside the ciphertext)")]
-    payload_type: Option<String>,
     #[arg(
         long,
         default_value_t = 600,
@@ -99,23 +97,17 @@ async fn run_demo_flow(cli: &Cli, client: &StealthCanisterClient) -> Result<()> 
     println!("View public key: 0x{}", hex::encode(&view_public_key));
 
     let plaintext = cli.message.as_bytes();
-    let encryption = encrypt_payload(
-        &mut rng,
-        &view_public_key,
-        plaintext,
-        cli.payload_type.clone(),
-        None,
-        None,
-    )
-    .context("encryption failed")?;
+    let encryption = encrypt_payload(&mut rng, &view_public_key, address, plaintext, None)
+        .context("encryption failed")?;
 
     let announcement = client
         .submit_announcement(&encryption.announcement)
         .await
         .context("failed to submit announcement")?;
     println!(
-        "Submitted announcement id {} with view tag {}",
-        announcement.id, announcement.view_tag
+        "Submitted announcement id {} (ciphertext {} bytes)",
+        announcement.id,
+        announcement.ciphertext.len()
     );
 
     let transport = recipient::prepare_transport_key();
@@ -151,18 +143,16 @@ async fn run_demo_flow(cli: &Cli, client: &StealthCanisterClient) -> Result<()> 
 
     let view_key = recipient::decrypt_vet_key(&encrypted_key, &view_public_key, &transport.secret)
         .context("failed to decrypt vet key response")?;
-    let view_secret =
-        recipient::derive_view_secret(&view_key).context("failed to derive view secret scalar")?;
     println!(
-        "Recovered view secret scalar: 0x{}",
-        hex::encode(view_secret)
+        "Recovered VetKey signature bytes: 0x{}",
+        hex::encode(view_key.serialize())
     );
 
     let page = client
         .list_announcements(None, Some(50))
         .await
         .context("failed to list announcements")?;
-    let decrypted = scan_announcements(&view_secret, &page.announcements)
+    let decrypted = scan_announcements(&view_key, &page.announcements)
         .context("failed to decrypt announcements")?;
 
     if let Some(found) = decrypted.iter().find(|entry| entry.id == announcement.id) {

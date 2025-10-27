@@ -2,7 +2,7 @@
 members = [
     "canisters/key_manager",
     "canisters/storage",
-    "crates/stealth_client",
+    "stealth_client",
 ]
 resolver = "2"
 

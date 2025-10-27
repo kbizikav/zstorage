@@ -85,15 +85,8 @@ fn pocket_ic_end_to_end_flow() {
         println!("got view public key: {}", hex::encode(&view_public_key));
 
         let plaintext = b"hello from pocket-ic test";
-        let encryption = encrypt_payload(
-            &mut rng,
-            &view_public_key,
-            plaintext,
-            Some("text/plain".into()),
-            None,
-            None,
-        )
-        .expect("encryption failed");
+        let encryption = encrypt_payload(&mut rng, &view_public_key, address, plaintext, None)
+            .expect("encryption failed");
 
         let announcement = client
             .submit_announcement(&encryption.announcement)
@@ -101,6 +94,8 @@ fn pocket_ic_end_to_end_flow() {
             .expect("failed to submit announcement");
 
         let transport = recipient::prepare_transport_key();
+
+        // expiry in 10 minutes
         let expiry_ns = unix_time_ns().saturating_add(600 * 1_000_000_000);
         let nonce = rng.next_u64();
         let auth_message = sender::build_authorization_message(
@@ -128,15 +123,13 @@ fn pocket_ic_end_to_end_flow() {
         let view_key =
             recipient::decrypt_vet_key(&encrypted_key, &view_public_key, &transport.secret)
                 .expect("failed to decrypt vet key");
-        let view_secret =
-            recipient::derive_view_secret(&view_key).expect("failed to derive view secret");
 
         let page = client
             .list_announcements(None, Some(50))
             .await
             .expect("failed to list announcements");
         let decrypted =
-            scan_announcements(&view_secret, &page.announcements).expect("scan announcements");
+            scan_announcements(&view_key, &page.announcements).expect("scan announcements");
         let recovered = decrypted
             .iter()
             .find(|entry| entry.id == announcement.id)
@@ -233,8 +226,6 @@ fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("crate dir has parent")
-        .parent()
-        .expect("workspace root exists")
         .to_path_buf()
 }
 

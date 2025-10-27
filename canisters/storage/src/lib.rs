@@ -4,8 +4,8 @@ use candid::{CandidType, Deserialize};
 use ic_cdk::api::time;
 use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
 
-const MAX_PLAINTEXT_BYTES: usize = 16 * 1024;
-const MAX_METADATA_BYTES: usize = 4 * 1024;
+const MAX_CIPHERTEXT_BYTES: usize = 16 * 1024;
+const MAX_IBE_CIPHERTEXT_BYTES: usize = 512;
 const DEFAULT_LIST_LIMIT: u32 = 50;
 const MAX_LIST_LIMIT: u32 = 200;
 
@@ -17,25 +17,17 @@ pub struct InitArgs {
 
 #[derive(Clone, CandidType, Deserialize)]
 pub struct AnnouncementInput {
-    pub view_tag: u8,
-    pub ephemeral_public_key: Vec<u8>,
+    pub ibe_ciphertext: Vec<u8>,
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
-    #[serde(default)]
-    pub payload_type: Option<String>,
-    #[serde(default)]
-    pub metadata: Option<Vec<u8>>,
 }
 
 #[derive(Clone, CandidType, Deserialize)]
 pub struct Announcement {
     pub id: u64,
-    pub view_tag: u8,
-    pub ephemeral_public_key: Vec<u8>,
+    pub ibe_ciphertext: Vec<u8>,
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
-    pub payload_type: Option<String>,
-    pub metadata: Option<Vec<u8>>,
     pub created_at_ns: u64,
 }
 
@@ -91,12 +83,9 @@ fn submit_announcement(input: AnnouncementInput) -> Result<Announcement, String>
         let mut state = cell.borrow_mut();
         let announcement = Announcement {
             id: state.next_id,
-            view_tag: input.view_tag,
-            ephemeral_public_key: input.ephemeral_public_key.clone(),
+            ibe_ciphertext: input.ibe_ciphertext.clone(),
             ciphertext: input.ciphertext.clone(),
             nonce: input.nonce.clone(),
-            payload_type: input.payload_type.clone(),
-            metadata: input.metadata.clone(),
             created_at_ns: time(),
         };
         state.announcements.push(announcement.clone());
@@ -147,19 +136,14 @@ fn get_announcement(id: u64) -> Option<Announcement> {
 }
 
 fn validate_announcement(input: &AnnouncementInput) -> Result<(), String> {
-    if input.ephemeral_public_key.len() != 96 {
-        return Err("ephemeral_public_key must be 96 bytes (G2 compressed)".to_string());
+    if input.ibe_ciphertext.is_empty() || input.ibe_ciphertext.len() > MAX_IBE_CIPHERTEXT_BYTES {
+        return Err("ibe_ciphertext size is invalid".to_string());
     }
-    if input.ciphertext.is_empty() || input.ciphertext.len() > MAX_PLAINTEXT_BYTES {
+    if input.ciphertext.is_empty() || input.ciphertext.len() > MAX_CIPHERTEXT_BYTES {
         return Err("ciphertext size is invalid".to_string());
     }
     if input.nonce.len() != 12 {
         return Err("nonce must be 12 bytes (AES-GCM)".to_string());
-    }
-    if let Some(ref metadata) = input.metadata {
-        if metadata.len() > MAX_METADATA_BYTES {
-            return Err("metadata too large".to_string());
-        }
     }
     Ok(())
 }
@@ -173,12 +157,9 @@ mod tests {
     #[test]
     fn validation_rejects_bad_key() {
         let input = AnnouncementInput {
-            view_tag: 0,
-            ephemeral_public_key: vec![0; 96],
+            ibe_ciphertext: vec![0; 128],
             ciphertext: vec![1; 16],
             nonce: vec![0; 12],
-            payload_type: None,
-            metadata: None,
         };
         assert!(validate_announcement(&input).is_ok());
     }

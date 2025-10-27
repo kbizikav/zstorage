@@ -1,22 +1,16 @@
 type InitArgs = record { capacity_hint : opt nat64 };
 
 type AnnouncementInput = record {
-  view_tag : nat8;
-  ephemeral_public_key : blob;
+  ibe_ciphertext : blob;
   ciphertext : blob;
   nonce : blob;
-  payload_type : opt text;
-  metadata : opt blob;
 };
 
 type Announcement = record {
   id : nat64;
-  view_tag : nat8;
-  ephemeral_public_key : blob;
+  ibe_ciphertext : blob;
   ciphertext : blob;
   nonce : blob;
-  payload_type : opt text;
-  metadata : opt blob;
   created_at_ns : nat64;
 };
 
