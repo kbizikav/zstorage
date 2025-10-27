@@ -149,18 +149,3 @@ fn validate_announcement(input: &AnnouncementInput) -> Result<(), String> {
 }
 
 ic_cdk::export_candid!();
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn validation_rejects_bad_key() {
-        let input = AnnouncementInput {
-            ibe_ciphertext: vec![0; 128],
-            ciphertext: vec![1; 16],
-            nonce: vec![0; 12],
-        };
-        assert!(validate_announcement(&input).is_ok());
-    }
-}

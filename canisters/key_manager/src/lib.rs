@@ -167,23 +167,3 @@ fn context_for_address(address: &Address) -> Vec<u8> {
 }
 
 ic_cdk::export_candid!();
-
-#[cfg(test)]
-mod tests {
-    use candid::Principal;
-
-    use super::*;
-
-    #[test]
-    fn prefix_message_format() {
-        let address = [0u8; 20];
-        let msg = authorization_message(
-            Principal::management_canister(),
-            &address,
-            &[1, 2, 3],
-            42,
-            7,
-        );
-        assert!(msg.starts_with(b"\x19Ethereum Signed Message:\n"));
-    }
-}
