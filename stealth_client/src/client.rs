@@ -62,6 +62,19 @@ impl StealthCanisterClient {
         result.map_err(ClientError::Canister)
     }
 
+    pub async fn get_max_nonce(&self, address: [u8; 20]) -> ClientResult<u64> {
+        let arg = candid::Encode!(&address.to_vec())?;
+        let response = self
+            .agent
+            .query(&self.key_manager_canister_id, "get_max_nonce")
+            .with_arg(arg)
+            .call()
+            .await?;
+        let result: std::result::Result<u64, String> =
+            candid::Decode!(&response, std::result::Result<u64, String>)?;
+        result.map_err(ClientError::Canister)
+    }
+
     pub async fn submit_announcement(
         &self,
         input: &types::AnnouncementInput,

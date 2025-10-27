@@ -82,6 +82,7 @@ Public methods:
 | --- | --- | --- |
 | `get_master_public_key() -> Vec<u8>` | query | Returns the configured vetKD master public key for offline verification. |
 | `get_view_public_key(address: [u8; 20]) -> ViewPublicKeyResponse` | query | Calls `vetkd_public_key` and returns the hashed identity point plus optional master public key bytes for senders. |
+| `get_max_nonce(address: [u8; 20]) -> u64` | query | Returns the highest nonce previously accepted for the given address, or `0` if the address has never authorized. |
 | `request_encrypted_view_key(req: EncryptedViewKeyRequest) -> EncryptedViewKeyResponse` | update | Verifies the wallet signature, enforces nonce/expiry, invokes `vetkd_derive_key`, and returns the encrypted IBE private key bound to the recipient’s transport key. |
 
 Authorization message (EIP-191 style):

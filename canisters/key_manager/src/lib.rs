@@ -4,7 +4,7 @@ use ic_cdk::management_canister::{
     vetkd_derive_key, vetkd_public_key, VetKDCurve, VetKDDeriveKeyArgs, VetKDKeyId,
     VetKDPublicKeyArgs,
 };
-use ic_cdk_macros::{init, post_upgrade, pre_upgrade, update};
+use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
@@ -141,6 +141,14 @@ async fn request_encrypted_view_key(request: EncryptedViewKeyRequest) -> Result<
         .map_err(|err| err.to_string())?;
 
     Ok(reply.encrypted_key)
+}
+
+#[query]
+fn get_max_nonce(address: Vec<u8>) -> Result<u64> {
+    let address = to_address(&address)?;
+    let max_nonce =
+        with_state(|state| state.max_nonce_by_address.get(&address).copied())?.unwrap_or(0);
+    Ok(max_nonce)
 }
 
 fn with_state<F, R>(f: F) -> Result<R>

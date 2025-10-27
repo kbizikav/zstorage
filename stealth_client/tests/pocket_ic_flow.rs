@@ -3,7 +3,7 @@ use ic_agent::{identity::AnonymousIdentity, Agent};
 use k256::ecdsa::SigningKey;
 use key_manager::authorization::authorization_message;
 use pocket_ic::{PocketIcBuilder, PocketIcState};
-use rand::{rngs::OsRng, RngCore};
+use rand::rngs::OsRng;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -100,7 +100,11 @@ fn pocket_ic_end_to_end_flow() {
         let expiry_ns = unix_time_ns()
             .expect("system time before unix epoch")
             .saturating_add(600 * 1_000_000_000);
-        let nonce = rng.next_u64();
+        let max_nonce = client
+            .get_max_nonce(address)
+            .await
+            .expect("failed to query max nonce");
+        let nonce = max_nonce.saturating_add(1);
         let auth_message = authorization_message(
             key_manager_principal,
             &address,
